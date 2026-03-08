@@ -93,6 +93,38 @@
     </form>
   </section>
   <section class="card span-4">
+    <h2>网络管理</h2>
+    <form action="/networks" method="post">
+      <?= csrf_field() ?>
+      <label>网络名称</label><input type="text" name="name" value="default" required>
+      <label>CIDR</label><input type="text" name="cidr" value="192.168.122.0/24" required>
+      <label>网关</label><input type="text" name="gateway" value="192.168.122.1" required>
+      <label>Bridge</label><input type="text" name="bridge_name" value="virbr0">
+      <div class="row">
+        <div><label>DHCP 起始</label><input type="text" name="dhcp_start" value="192.168.122.2"></div>
+        <div><label>DHCP 结束</label><input type="text" name="dhcp_end" value="192.168.122.254"></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn secondary" type="submit">创建网络</button>
+    </form>
+    <div class="spacer"></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>名称</th><th>CIDR</th><th>网关</th></tr></thead>
+        <tbody>
+          <?php foreach ($networks as $network): ?>
+            <tr>
+              <td><?= e((string) $network['name']) ?></td>
+              <td><?= e((string) $network['cidr']) ?></td>
+              <td><?= e((string) $network['gateway']) ?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php if (!$networks): ?><tr><td colspan="3" class="muted">暂无网络</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card span-4">
     <h2>IP 池管理</h2>
     <form action="/ip-pools" method="post">
       <?= csrf_field() ?>
@@ -211,7 +243,11 @@
         </div>
       </div>
       <label>网络</label>
-      <input type="text" name="network_name" value="default">
+      <select name="network_name">
+        <?php foreach ($networks as $network): ?>
+          <option value="<?= e((string) $network['name']) ?>"><?= e((string) $network['name']) ?> / <?= e((string) $network['cidr']) ?></option>
+        <?php endforeach; ?>
+      </select>
       <label>IP 池</label>
       <select name="ip_pool_id">
         <option value="">不指定</option>

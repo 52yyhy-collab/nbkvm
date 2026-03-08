@@ -7,6 +7,7 @@ use Nbkvm\Repositories\ImageRepository;
 use Nbkvm\Repositories\IpAddressRepository;
 use Nbkvm\Repositories\IpPoolRepository;
 use Nbkvm\Repositories\JobRepository;
+use Nbkvm\Repositories\NetworkRepository;
 use Nbkvm\Repositories\SnapshotRepository;
 use Nbkvm\Repositories\TemplateRepository;
 use Nbkvm\Repositories\UserRepository;
@@ -29,6 +30,7 @@ class DashboardController extends BaseController
         }
         $this->view('dashboard', [
             'images' => (new ImageRepository())->all(),
+            'networks' => (new NetworkRepository())->all(),
             'ipPools' => (new IpPoolRepository())->all(),
             'ipAddresses' => (new IpAddressRepository())->all(),
             'templates' => (new TemplateRepository())->all(),

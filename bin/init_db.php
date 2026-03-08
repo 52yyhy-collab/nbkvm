@@ -90,6 +90,18 @@ $queries = [
         created_at TEXT NOT NULL,
         updated_at TEXT DEFAULT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS networks (
+        id $idColumn,
+        name VARCHAR(191) NOT NULL UNIQUE,
+        cidr VARCHAR(64) NOT NULL,
+        gateway VARCHAR(64) NOT NULL,
+        bridge_name VARCHAR(64) DEFAULT NULL,
+        dhcp_start VARCHAR(64) DEFAULT NULL,
+        dhcp_end VARCHAR(64) DEFAULT NULL,
+        libvirt_managed $boolType NOT NULL DEFAULT 1,
+        autostart $boolType NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+    )",
     "CREATE TABLE IF NOT EXISTS ip_pools (
         id $idColumn,
         name VARCHAR(191) NOT NULL UNIQUE,
@@ -133,6 +145,22 @@ if ((int) $exists->fetchColumn() === 0) {
         'username' => $username,
         'password_hash' => password_hash((string) config('auth.default_password'), PASSWORD_DEFAULT),
         'role' => 'admin',
+        'created_at' => date('c'),
+    ]);
+}
+$networkExists = $pdo->prepare('SELECT COUNT(*) FROM networks WHERE name = :name');
+$networkExists->execute(['name' => 'default']);
+if ((int) $networkExists->fetchColumn() === 0) {
+    $stmt = $pdo->prepare('INSERT INTO networks (name, cidr, gateway, bridge_name, dhcp_start, dhcp_end, libvirt_managed, autostart, created_at) VALUES (:name, :cidr, :gateway, :bridge_name, :dhcp_start, :dhcp_end, :libvirt_managed, :autostart, :created_at)');
+    $stmt->execute([
+        'name' => 'default',
+        'cidr' => '192.168.122.0/24',
+        'gateway' => '192.168.122.1',
+        'bridge_name' => 'virbr0',
+        'dhcp_start' => '192.168.122.2',
+        'dhcp_end' => '192.168.122.254',
+        'libvirt_managed' => 1,
+        'autostart' => 1,
         'created_at' => date('c'),
     ]);
 }

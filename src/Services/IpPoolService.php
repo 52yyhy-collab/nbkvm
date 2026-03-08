@@ -27,6 +27,7 @@ class IpPoolService
         if ($startLong === false || $endLong === false || $startLong > $endLong) {
             throw new RuntimeException('IP 范围不合法。');
         }
+        (new NetworkService())->assertPoolMatchesNetwork($networkName, $gateway, $prefix, $startIp, $endIp);
         $poolId = (new IpPoolRepository())->create([
             'name' => $name,
             'network_name' => $networkName,
