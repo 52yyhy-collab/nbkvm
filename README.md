@@ -2,8 +2,8 @@
 NBKVM 是一个基于 PHP 的 KVM / libvirt 控制系统，项目名为 **nbkvm**。
 当前版本已经实现并实测了以下能力：
 - 上传系统镜像（ISO / QCOW2 / RAW）
-- 基于镜像创建系统模板
-- 基于系统模板开虚拟机
+- 基于镜像创建/编辑系统模板（CPU / 内存 / 磁盘 / 网络 / GPU / 镜像模块化）
+- 基于系统模板开虚拟机，并支持安全受限的 VM 配置更新
 - 启动、关机、强制停止、删除虚拟机
 - 生成并挂载 cloud-init ISO
 - 创建 / 回滚 / 删除快照
@@ -14,7 +14,10 @@ NBKVM 是一个基于 PHP 的 KVM / libvirt 控制系统，项目名为 **nbkvm*
 - 环境自检
 - 审计日志
 - SQLite / MySQL 双后端配置支持
-- noVNC 链接入口、本地代理脚本与控制入口
+- noVNC 图形控制台、本地代理脚本与控制入口
+- Xterm / serial console 入口（tmux + virsh console 能力探测与网页封装）
+- PVE 风格网络模型、bridge 探测下拉、网络内联 IPv4/IPv6 地址池
+- 多页面导航（总览 / 网络 / 模板 / 虚拟机 / 镜像 / 系统配置）
 - 部署脚本与部署文档
 ## 技术选型
 - PHP 8.3+
@@ -52,7 +55,7 @@ sudo apt-get update
 sudo apt-get install -y \
   php-cli php-sqlite3 php8.3-libvirt-php php-mysql \
   qemu-utils qemu-system-x86 libvirt-clients libvirt-daemon-system \
-  bridge-utils virtinst cloud-image-utils sqlite3 \
+  bridge-utils virtinst cloud-image-utils sqlite3 tmux \
   mariadb-server novnc websockify
 ```
 如果安装完 `php8.3-libvirt-php` 后 PHP 里没看到 `libvirt` 模块，可以手动启用：
@@ -107,7 +110,8 @@ http://你的主机IP:8080/login
 ```bash
 cloud-localds
 ```
-## noVNC
+## 控制台
+### noVNC
 面板会显示 VNC display，并支持生成 noVNC 链接和代理命令。
 如果你已经有 noVNC / websockify 服务，可设置：
 ```bash
@@ -121,6 +125,12 @@ bash bin/start_novnc_proxy.sh test-vm-01 6080
 ```text
 http://你的主机IP:6080/vnc.html
 ```
+
+### Xterm / Serial Console
+- 面板新增 `/console/open?id=<vm_id>` 入口
+- 后端通过 `tmux + virsh console` 维护交互会话
+- 页面会检测 `virsh` / `tmux` / serial console 能力，并在能力不足时给出提示
+- 新创建的 VM XML 已默认带上 serial/console 设备，便于后续接入终端式控制台
 ## 存储目录权限
 建议让运行 Web 的用户对 `storage_root` 可写，同时让 libvirt/qemu 进程可读：
 ```bash
@@ -128,11 +138,12 @@ sudo mkdir -p /var/libvirt/images/nbkvm/{uploads,templates,vms}
 sudo chown -R $(whoami):libvirt /var/libvirt/images/nbkvm
 sudo chmod -R 775 /var/libvirt/images/nbkvm
 ```
-## IP 池说明
-IP 池目前走 **A 路线**：
-- 只对 **启用 cloud-init 的非 ISO 模板** 自动下发静态 IP
-- 对普通 ISO 安装模板，不做“自动写进系统”的承诺
-- 这意味着 IP 池是“cloud image / cloud-init 模板优先”的能力
+## 网络与地址池（PVE 风格）
+- 地址池仍保留在内部数据结构中，但前台不再要求用户先单独创建 `IP Pool`
+- 现在是在“网络配置”里直接填写 IPv4 / IPv6 地址池范围与 DNS
+- 模板 / VM 网卡只需要选择网络；当网卡模式设为 `pool` 时，会自动使用该网络的默认地址池
+- Bridge 字段支持读取宿主机现有 bridge / interface 候选，默认走下拉选择，保留高级自定义输入兜底
+- 对已被模板或 VM 引用的网络，禁止直接修改 bridge / 模式 / 子网等危险字段，建议新建网络后迁移
 ## 删除与清理
 当删除虚拟机并勾选“同时删磁盘”时，会清理：
 - 系统磁盘
@@ -146,14 +157,17 @@ IP 池目前走 **A 路线**：
 1. 初始化数据库（SQLite / MySQL）
 2. 自动创建管理员用户
 3. 登录 / 修改密码
-4. 创建镜像记录
-5. 创建模板
-6. 创建虚拟机磁盘和 XML
-7. define 到 libvirt
-8. 启动虚拟机
-9. 生成 cloud-init ISO
-10. 创建 / 回滚 / 删除快照
-11. noVNC / websockify 环境检测
+4. 多页面 Dashboard 访问（总览 / 网络 / 模板 / 虚拟机 / 镜像 / 系统配置）
+5. 网络页内联地址池配置与页面回跳
+6. 创建镜像记录
+7. 创建模板
+8. 创建虚拟机磁盘和 XML
+9. define 到 libvirt
+10. 启动虚拟机
+11. 生成 cloud-init ISO
+12. 创建 / 回滚 / 删除快照
+13. noVNC / websockify 环境检测
+14. Xterm / serial console 页面与能力探测入口
 ## 适合下一步继续增强的方向
 - 更完整的 RBAC
 - 真正的 noVNC 代理管理页

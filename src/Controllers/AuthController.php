@@ -32,8 +32,9 @@ class AuthController extends BaseController
     }
     public function changePassword(Request $request): never
     {
+        $redirectTo = (string) $request->input('redirect_to', '/');
         if (!verify_csrf((string) $request->input('_csrf'))) {
-            $this->back('CSRF 校验失败。', 'error', '/');
+            $this->back('CSRF 校验失败。', 'error', $redirectTo);
         }
         $user = auth_user();
         if (!$user || empty($user['id'])) {
@@ -42,12 +43,12 @@ class AuthController extends BaseController
         $password = (string) $request->input('password');
         $confirm = (string) $request->input('password_confirm');
         if (strlen($password) < 8) {
-            $this->back('新密码至少需要 8 位。', 'error', '/');
+            $this->back('新密码至少需要 8 位。', 'error', $redirectTo);
         }
         if ($password !== $confirm) {
-            $this->back('两次输入的新密码不一致。', 'error', '/');
+            $this->back('两次输入的新密码不一致。', 'error', $redirectTo);
         }
         (new \Nbkvm\Repositories\UserRepository())->updatePassword((int) $user['id'], password_hash($password, PASSWORD_DEFAULT));
-        $this->back('密码修改成功。');
+        $this->back('密码修改成功。', 'success', $redirectTo);
     }
 }

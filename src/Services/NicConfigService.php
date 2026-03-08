@@ -224,10 +224,13 @@ class NicConfigService
         $ipv4PoolId = $this->nullableInt($rawNic['ipv4_pool_id'] ?? $rawNic['ip_pool_id'] ?? null);
         $ipv6PoolId = $this->nullableInt($rawNic['ipv6_pool_id'] ?? null);
 
+        if ($ipv4Mode === 'pool' && $ipv4PoolId === null) {
+            $ipv4PoolId = $this->defaultPoolIdForNetwork($network, 'ipv4');
+        }
         $ipv4Pool = $ipv4PoolId !== null ? $this->resolvePool($ipv4PoolId, $strict) : null;
         if ($ipv4Mode === 'pool') {
             if ($ipv4PoolId === null) {
-                throw new RuntimeException('网卡 #' . ($index + 1) . ' 的 IPv4 模式为 pool，但没有选择 IPv4 池。');
+                throw new RuntimeException('网卡 #' . ($index + 1) . ' 选择了 IPv4 地址池模式，但所选网络没有可用 IPv4 地址池。');
             }
             $this->validatePoolMatch($ipv4Pool, $network, 'ipv4', $index, $strict);
         } else {
@@ -235,10 +238,13 @@ class NicConfigService
             $ipv4Pool = null;
         }
 
+        if ($ipv6Mode === 'pool' && $ipv6PoolId === null) {
+            $ipv6PoolId = $this->defaultPoolIdForNetwork($network, 'ipv6');
+        }
         $ipv6Pool = $ipv6PoolId !== null ? $this->resolvePool($ipv6PoolId, $strict) : null;
         if ($ipv6Mode === 'pool') {
             if ($ipv6PoolId === null) {
-                throw new RuntimeException('网卡 #' . ($index + 1) . ' 的 IPv6 模式为 pool，但没有选择 IPv6 池。');
+                throw new RuntimeException('网卡 #' . ($index + 1) . ' 选择了 IPv6 地址池模式，但所选网络没有可用 IPv6 地址池。');
             }
             $this->validatePoolMatch($ipv6Pool, $network, 'ipv6', $index, $strict);
         } else {
@@ -424,6 +430,23 @@ class NicConfigService
             throw new RuntimeException('找不到 IP 池 #' . $poolId . '。');
         }
         return $pool ?: null;
+    }
+
+    private function defaultPoolIdForNetwork(?array $network, string $family): ?int
+    {
+        if ($network === null) {
+            return null;
+        }
+
+        $repo = new IpPoolRepository($this->pdo);
+        $pool = null;
+        if ((int) ($network['id'] ?? 0) > 0) {
+            $pool = $repo->findByNetworkId((int) $network['id'], $family);
+        }
+        if ($pool === null && trim((string) ($network['name'] ?? '')) !== '') {
+            $pool = $repo->findByNetworkName((string) $network['name'], $family);
+        }
+        return $pool !== null ? (int) $pool['id'] : null;
     }
 
     private function validatePoolMatch(?array $pool, ?array $network, string $family, int $index, bool $strict): void

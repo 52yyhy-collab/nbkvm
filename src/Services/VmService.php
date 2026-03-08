@@ -36,30 +36,22 @@ class VmService
         }
 
         $cpu = max(1, (int) ($template['cpu'] ?? 1));
+        $cpuSockets = max(1, (int) ($template['cpu_sockets'] ?? 1));
+        $cpuCores = max(1, (int) ($template['cpu_cores'] ?? 1));
+        $cpuThreads = max(1, (int) ($template['cpu_threads'] ?? 1));
         $memoryMb = max(256, (int) ($template['memory_mb'] ?? 2048));
-        $defaultDiskSizeGb = max(5, (int) ($template['disk_size_gb'] ?? 20));
-        $defaultDiskBus = trim((string) ($template['disk_bus'] ?? config('libvirt.default_disk_bus'))) ?: (string) config('libvirt.default_disk_bus');
         $cloudInitEnabled = (int) ($template['cloud_init_enabled'] ?? 0) === 1;
 
         if (($image['extension'] ?? '') === 'iso' && $cloudInitEnabled) {
             throw new RuntimeException('ISO 模板不支持 cloud-init 自动注入。');
         }
 
-        $disks = json_decode((string) ($template['disks_json'] ?? '[]'), true);
-        if (!is_array($disks) || $disks === []) {
-            $disks = [[
-                'name' => 'disk0',
-                'size_gb' => $defaultDiskSizeGb,
-                'bus' => $defaultDiskBus,
-                'format' => 'qcow2',
-            ]];
-        }
-
+        $disks = (new DiskConfigService())->hydrateTemplateDisks($template);
         $nicService = new NicConfigService();
         $nics = $nicService->hydrateTemplateNics($template);
         $nics = $nicService->normalizeVmOverride((string) ($data['vm_nics_json'] ?? ''), $nics);
         if ($nicService->requiresCloudInitConfig($nics) && !$cloudInitEnabled) {
-            throw new RuntimeException('模板网卡包含静态地址或 IP 池，必须启用 cloud-init。');
+            throw new RuntimeException('模板网卡包含静态地址或地址池，必须启用 cloud-init。');
         }
 
         $vmDir = rtrim((string) config('vm_path'), '/') . '/' . $name;
@@ -79,10 +71,11 @@ class VmService
                     continue;
                 }
                 $diskName = trim((string) ($disk['name'] ?? ('disk' . $index))) ?: ('disk' . $index);
-                $sizeGb = max(1, (int) ($disk['size_gb'] ?? ($index === 0 ? $defaultDiskSizeGb : 10)));
-                $bus = trim((string) ($disk['bus'] ?? $defaultDiskBus)) ?: $defaultDiskBus;
+                $sizeGb = max(1, (int) ($disk['size_gb'] ?? ($index === 0 ? 20 : 10)));
+                $bus = trim((string) ($disk['bus'] ?? config('libvirt.default_disk_bus'))) ?: (string) config('libvirt.default_disk_bus');
                 $format = trim((string) ($disk['format'] ?? 'qcow2')) ?: 'qcow2';
-                $path = $vmDir . '/' . $diskName . '.qcow2';
+                $extension = $format === 'raw' ? 'img' : $format;
+                $path = $vmDir . '/' . $diskName . '.' . $extension;
 
                 if ($index === 0) {
                     $libvirt->createDiskFromImage((string) $image['path'], $path, $sizeGb, (string) $image['extension']);
@@ -111,9 +104,13 @@ class VmService
                 'name' => $name,
                 'template_id' => $templateId,
                 'cpu' => $cpu,
+                'cpu_sockets' => $cpuSockets,
+                'cpu_cores' => $cpuCores,
+                'cpu_threads' => $cpuThreads,
                 'memory_mb' => $memoryMb,
                 'disk_path' => $diskEntries[0]['path'],
                 'disk_size_gb' => (int) $diskEntries[0]['size_gb'],
+                'disks_json' => json_encode($diskEntries, JSON_UNESCAPED_UNICODE),
                 'network_name' => $primaryNetworkName,
                 'ip_pool_id' => $primaryPoolId,
                 'status' => 'defined',
@@ -219,6 +216,91 @@ class VmService
         }
     }
 
+    public function update(int $id, array $data): void
+    {
+        $repo = new VmRepository();
+        $vm = $repo->find($id);
+        if (!$vm) {
+            throw new RuntimeException('虚拟机不存在。');
+        }
+
+        $template = (new TemplateRepository())->find((int) ($vm['template_id'] ?? 0));
+        if (!$template) {
+            throw new RuntimeException('虚拟机关联模板不存在。');
+        }
+        $image = (new ImageRepository())->find((int) ($template['image_id'] ?? 0));
+        if (!$image) {
+            throw new RuntimeException('模板关联镜像不存在。');
+        }
+
+        $cpuSockets = max(1, (int) ($data['cpu_sockets'] ?? ($vm['cpu_sockets'] ?? 1)));
+        $cpuCores = max(1, (int) ($data['cpu_cores'] ?? ($vm['cpu_cores'] ?? 1)));
+        $cpuThreads = max(1, (int) ($data['cpu_threads'] ?? ($vm['cpu_threads'] ?? 1)));
+        $cpu = $cpuSockets * $cpuCores * $cpuThreads;
+        $memoryMb = max(256, (int) ($data['memory_mb'] ?? ($vm['memory_mb'] ?? 2048)));
+        $expiresAt = ($data['expires_at'] ?? '') !== '' ? (string) $data['expires_at'] : null;
+        $expireGraceDays = max(0, (int) ($data['expire_grace_days'] ?? ($vm['expire_grace_days'] ?? 3)));
+        $expireAction = 'pause';
+
+        $hardwareChanged = $cpu !== (int) ($vm['cpu'] ?? 0)
+            || $cpuSockets !== (int) ($vm['cpu_sockets'] ?? 0)
+            || $cpuCores !== (int) ($vm['cpu_cores'] ?? 0)
+            || $cpuThreads !== (int) ($vm['cpu_threads'] ?? 0)
+            || $memoryMb !== (int) ($vm['memory_mb'] ?? 0);
+
+        if ($hardwareChanged && !$this->canEditHardware((string) ($vm['status'] ?? 'unknown'))) {
+            throw new RuntimeException('CPU/内存仅允许在虚拟机已关机（shut off/defined）时修改。');
+        }
+
+        $disks = (new DiskConfigService())->hydrateVmDisks($vm, $template);
+        $nics = (new NicConfigService())->hydrateVmNics($vm, $template);
+        $payload = [
+            'name' => (string) $vm['name'],
+            'template_id' => (int) $vm['template_id'],
+            'cpu' => $cpu,
+            'cpu_sockets' => $cpuSockets,
+            'cpu_cores' => $cpuCores,
+            'cpu_threads' => $cpuThreads,
+            'memory_mb' => $memoryMb,
+            'disk_path' => (string) $vm['disk_path'],
+            'disk_size_gb' => (int) ($disks[0]['size_gb'] ?? ($vm['disk_size_gb'] ?? 0)),
+            'disks_json' => json_encode($disks, JSON_UNESCAPED_UNICODE),
+            'network_name' => (string) $vm['network_name'],
+            'ip_pool_id' => ($vm['ip_pool_id'] ?? null) !== null ? (int) $vm['ip_pool_id'] : null,
+            'status' => (string) ($vm['status'] ?? 'defined'),
+            'ip_address' => $vm['ip_address'] ?? null,
+            'xml_path' => (string) $vm['xml_path'],
+            'cloud_init_iso_path' => $vm['cloud_init_iso_path'] ?? null,
+            'expires_at' => $expiresAt,
+            'expire_action' => $expireAction,
+            'expire_grace_days' => $expireGraceDays,
+            'nics_json' => $vm['nics_json'] ?? '[]',
+            'disks' => $disks,
+            'nics' => $nics,
+        ];
+
+        if ($hardwareChanged) {
+            $xml = (new DomainXmlBuilder())->build($payload, $template, $image);
+            file_put_contents((string) $vm['xml_path'], $xml);
+            @chmod((string) $vm['xml_path'], 0644);
+            (new LibvirtService())->define($xml);
+        }
+
+        $repo->updateConfig($id, [
+            'cpu' => $cpu,
+            'cpu_sockets' => $cpuSockets,
+            'cpu_cores' => $cpuCores,
+            'cpu_threads' => $cpuThreads,
+            'memory_mb' => $memoryMb,
+            'disk_size_gb' => (int) ($disks[0]['size_gb'] ?? ($vm['disk_size_gb'] ?? 0)),
+            'disks_json' => json_encode($disks, JSON_UNESCAPED_UNICODE),
+            'expires_at' => $expiresAt,
+            'expire_action' => $expireAction,
+            'expire_grace_days' => $expireGraceDays,
+            'xml_path' => (string) $vm['xml_path'],
+        ]);
+    }
+
     public function refreshStates(): void
     {
         $libvirt = new LibvirtService();
@@ -280,5 +362,11 @@ class VmService
         }
         (new IpPoolService())->releaseByVmId($id);
         (new VmRepository())->delete($id);
+    }
+
+    private function canEditHardware(string $status): bool
+    {
+        $status = strtolower($status);
+        return str_contains($status, 'shut') || str_contains($status, 'defined') || str_contains($status, 'shutdown');
     }
 }

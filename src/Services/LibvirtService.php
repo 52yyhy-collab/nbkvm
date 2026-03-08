@@ -22,7 +22,7 @@ class LibvirtService
     private function connection(bool $readonly = false)
     {
         $this->ensureExtension();
-        $connection = libvirt_connect((string) config('libvirt.uri'), $readonly);
+        $connection = @libvirt_connect((string) config('libvirt.uri'), $readonly);
         if ($connection === false) {
             throw new RuntimeException('连接 libvirt 失败：' . $this->lastError());
         }

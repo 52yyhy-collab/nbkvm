@@ -35,6 +35,7 @@ class NetworkService
         if ($oldName !== $newName) {
             $this->assertNetworkRenameAllowed($existing);
         }
+        $this->assertDangerousNetworkChangesAllowed($existing, $payload);
 
         $repo->updateById($id, $payload + [
             'autostart' => (int) ($existing['autostart'] ?? 1),
@@ -57,9 +58,8 @@ class NetworkService
             throw new RuntimeException('网络保存成功，但回读失败。');
         }
 
-        $this->syncLegacyInlinePool($network, $data, 'pool_');
-        $this->syncLegacyInlinePool($network, $data, 'ipv4_pool_', 'ipv4');
-        $this->syncLegacyInlinePool($network, $data, 'ipv6_pool_', 'ipv6');
+        $this->syncInlinePoolFamily($network, $data, 'ipv4');
+        $this->syncInlinePoolFamily($network, $data, 'ipv6');
 
         return [
             'network_id' => $networkId,
@@ -262,7 +262,32 @@ class NetworkService
         $poolRepo = new IpPoolRepository();
         $networkId = (int) ($network['id'] ?? 0);
         if (($networkId > 0 && $poolRepo->findByNetworkId($networkId)) || $poolRepo->findByNetworkName((string) $network['name'])) {
-            throw new RuntimeException('该网络已绑定 IP 池，暂不支持直接改名。');
+            throw new RuntimeException('该网络已绑定地址池，暂不支持直接改名。');
+        }
+    }
+
+    private function assertDangerousNetworkChangesAllowed(array $existing, array $payload): void
+    {
+        $inUse = $this->isNetworkUsedByTemplates($existing) || $this->isNetworkUsedByVms($existing);
+        if (!$inUse) {
+            return;
+        }
+
+        $lockedFields = [
+            'bridge_name' => 'Bridge',
+            'libvirt_managed' => '接入方式',
+            'cidr' => 'IPv4 子网',
+            'gateway' => 'IPv4 网关',
+            'dhcp_start' => 'IPv4 DHCP 起始地址',
+            'dhcp_end' => 'IPv4 DHCP 结束地址',
+            'ipv6_cidr' => 'IPv6 子网',
+            'ipv6_gateway' => 'IPv6 网关',
+        ];
+
+        foreach ($lockedFields as $field => $label) {
+            if (($existing[$field] ?? null) !== ($payload[$field] ?? null)) {
+                throw new RuntimeException('该网络已被模板或虚拟机引用，不能直接修改“' . $label . '”。请新建网络并迁移使用方。');
+            }
         }
     }
 
@@ -333,31 +358,54 @@ class NetworkService
         }
     }
 
-    private function syncLegacyInlinePool(array $network, array $data, string $prefix, ?string $family = null): void
+    private function syncInlinePoolFamily(array $network, array $data, string $family): void
     {
-        $name = trim((string) ($data[$prefix . 'name'] ?? ''));
-        $startIp = trim((string) ($data[$prefix . 'start_ip'] ?? ''));
-        $endIp = trim((string) ($data[$prefix . 'end_ip'] ?? ''));
-        $poolId = (int) ($data[$prefix . 'id'] ?? $data['pool_id'] ?? 0);
-        $family = strtolower((string) ($family ?? $data[$prefix . 'family'] ?? $data['pool_family'] ?? 'ipv4'));
-        if ($name === '' && $startIp === '' && $endIp === '' && $poolId <= 0) {
+        $prefix = strtolower($family) === 'ipv6' ? 'ipv6_' : 'ipv4_';
+        $startIp = trim((string) ($data[$prefix . 'pool_start_ip'] ?? ''));
+        $endIp = trim((string) ($data[$prefix . 'pool_end_ip'] ?? ''));
+        $dnsServers = trim((string) ($data[$prefix . 'pool_dns_servers'] ?? config('cloud_init.dns')));
+
+        $existing = $this->findExistingPoolForFamily($network, $family);
+        if ($startIp === '' && $endIp === '') {
+            if ($existing !== null) {
+                (new IpPoolService())->delete((int) $existing['id']);
+            }
             return;
         }
+
+        if ($startIp === '' || $endIp === '') {
+            throw new RuntimeException(strtoupper($family) . ' 地址池必须同时填写起始地址和结束地址，或留空表示关闭。');
+        }
+
         $payload = [
-            'name' => $name !== '' ? $name : ((string) $network['name'] . '-' . $family . '-pool'),
+            'name' => (string) $network['name'] . '-' . $family,
             'network_id' => (int) $network['id'],
             'network_name' => (string) $network['name'],
             'family' => $family,
             'start_ip' => $startIp,
             'end_ip' => $endIp,
-            'dns_servers' => trim((string) ($data[$prefix . 'dns_servers'] ?? $data['pool_dns_servers'] ?? config('cloud_init.dns'))),
+            'dns_servers' => $dnsServers,
         ];
+
         $service = new IpPoolService();
-        if ($poolId > 0) {
-            $service->update($poolId, $payload);
+        if ($existing !== null) {
+            $service->update((int) $existing['id'], $payload);
             return;
         }
         $service->create($payload);
+    }
+
+    private function findExistingPoolForFamily(array $network, string $family): ?array
+    {
+        $repo = new IpPoolRepository();
+        $networkId = (int) ($network['id'] ?? 0);
+        if ($networkId > 0) {
+            $pool = $repo->findByNetworkId($networkId, $family);
+            if ($pool !== null) {
+                return $pool;
+            }
+        }
+        return $repo->findByNetworkName((string) ($network['name'] ?? ''), $family);
     }
 
     private function ipInSubnet(string $ip, string $network, int $prefix): bool

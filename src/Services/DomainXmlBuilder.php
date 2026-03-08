@@ -16,9 +16,9 @@ class DomainXmlBuilder
         $memoryMaxMb = max($memoryMb, (int) (($template['memory_max_mb'] ?? 0) ?: $memoryMb));
         $memoryMaxKiB = $memoryMaxMb * 1024;
         $vcpu = max(1, (int) ($vm['cpu'] ?? 1));
-        $cpuSockets = max(1, (int) ($template['cpu_sockets'] ?? 1));
-        $cpuCores = max(1, (int) ($template['cpu_cores'] ?? 1));
-        $cpuThreads = max(1, (int) ($template['cpu_threads'] ?? 1));
+        $cpuSockets = max(1, (int) ($vm['cpu_sockets'] ?? ($template['cpu_sockets'] ?? 1)));
+        $cpuCores = max(1, (int) ($vm['cpu_cores'] ?? ($template['cpu_cores'] ?? 1)));
+        $cpuThreads = max(1, (int) ($vm['cpu_threads'] ?? ($template['cpu_threads'] ?? 1)));
         $graphics = $this->e((string) config('libvirt.default_graphics'));
         $bootSection = "<boot dev='hd'/>";
         $osExtras = '';
@@ -82,7 +82,8 @@ class DomainXmlBuilder
             $devices[] = "    <video>\n      <model type='" . $this->e($gpuType) . "' vram='16384' heads='1' primary='yes'/>\n    </video>";
         }
         $devices[] = "    <graphics type='{$graphics}' autoport='yes' listen='0.0.0.0'/>";
-        $devices[] = '    <console type=\'pty\'/>';
+        $devices[] = "    <serial type='pty'>\n      <target port='0'/>\n    </serial>";
+        $devices[] = "    <console type='pty'>\n      <target type='serial' port='0'/>\n    </console>";
 
         $maxMemoryNode = $memoryMaxKiB > $memoryKiB ? "\n  <maxMemory slots='16' unit='KiB'>{$memoryMaxKiB}</maxMemory>" : '';
 
@@ -120,9 +121,9 @@ class DomainXmlBuilder
 
         $vlanTag = ($nic['vlan_tag'] ?? null) !== null && (string) $nic['vlan_tag'] !== '' ? (int) $nic['vlan_tag'] : null;
         if ($vlanTag !== null && $vlanTag > 0) {
-            $lines[] = "      <vlan>";
+            $lines[] = '      <vlan>';
             $lines[] = "        <tag id='" . $this->e((string) $vlanTag) . "'/>";
-            $lines[] = "      </vlan>";
+            $lines[] = '      </vlan>';
         }
 
         if ((int) ($nic['link_down'] ?? 0) === 1) {

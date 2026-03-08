@@ -30,7 +30,7 @@ class SchemaService
             "CREATE TABLE IF NOT EXISTS ip_pools (id {$idColumn}, name VARCHAR(191) NOT NULL UNIQUE, network_id BIGINT DEFAULT NULL, network_name VARCHAR(191) NOT NULL DEFAULT '', family VARCHAR(16) NOT NULL DEFAULT 'ipv4', gateway VARCHAR(128) DEFAULT NULL, prefix_length INTEGER DEFAULT NULL, dns_servers TEXT DEFAULT NULL, start_ip VARCHAR(128) NOT NULL, end_ip VARCHAR(128) NOT NULL, interface_name VARCHAR(64) DEFAULT NULL, created_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS ip_pool_addresses (id {$idColumn}, pool_id BIGINT NOT NULL, ip_address VARCHAR(128) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'free', vm_id BIGINT DEFAULT NULL, created_at TEXT NOT NULL, updated_at TEXT DEFAULT NULL)",
             "CREATE TABLE IF NOT EXISTS templates (id {$idColumn}, name VARCHAR(191) NOT NULL UNIQUE, image_id BIGINT NOT NULL, image_type VARCHAR(32) NOT NULL, os_variant VARCHAR(191) NOT NULL, cpu INTEGER NOT NULL DEFAULT 1, memory_mb INTEGER NOT NULL DEFAULT 512, disk_size_gb INTEGER NOT NULL DEFAULT 10, disk_bus VARCHAR(50) NOT NULL DEFAULT 'virtio', network_name VARCHAR(191) NOT NULL DEFAULT 'default', notes TEXT DEFAULT '', cloud_init_enabled {$boolType} NOT NULL DEFAULT 0, cloud_init_user VARCHAR(191) DEFAULT NULL, cloud_init_password VARCHAR(191) DEFAULT NULL, cloud_init_ssh_key TEXT DEFAULT NULL, virtualization_mode VARCHAR(32) DEFAULT 'kvm', cpu_sockets INTEGER DEFAULT 1, cpu_cores INTEGER DEFAULT 1, cpu_threads INTEGER DEFAULT 1, machine_type VARCHAR(64) DEFAULT 'pc', firmware_type VARCHAR(32) DEFAULT 'bios', gpu_type VARCHAR(64) DEFAULT 'cirrus', autostart_default {$boolType} NOT NULL DEFAULT 0, memory_max_mb INTEGER DEFAULT NULL, memory_overcommit_percent INTEGER DEFAULT 100, disk_overcommit_enabled {$boolType} NOT NULL DEFAULT 0, disks_json TEXT DEFAULT NULL, nics_json TEXT DEFAULT NULL, created_at TEXT NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS vms (id {$idColumn}, name VARCHAR(191) NOT NULL UNIQUE, template_id BIGINT NOT NULL, cpu INTEGER NOT NULL, memory_mb INTEGER NOT NULL, disk_path TEXT NOT NULL, disk_size_gb INTEGER NOT NULL, network_name VARCHAR(191) NOT NULL DEFAULT 'default', ip_pool_id BIGINT DEFAULT NULL, status VARCHAR(50) NOT NULL, ip_address VARCHAR(191) DEFAULT NULL, xml_path TEXT NOT NULL, cloud_init_iso_path TEXT DEFAULT NULL, vnc_display VARCHAR(191) DEFAULT NULL, expires_at TEXT DEFAULT NULL, expire_action VARCHAR(32) DEFAULT 'pause', expire_grace_days INTEGER DEFAULT 3, expired_at TEXT DEFAULT NULL, nics_json TEXT DEFAULT NULL, created_at TEXT NOT NULL, updated_at TEXT DEFAULT NULL)",
+            "CREATE TABLE IF NOT EXISTS vms (id {$idColumn}, name VARCHAR(191) NOT NULL UNIQUE, template_id BIGINT NOT NULL, cpu INTEGER NOT NULL, cpu_sockets INTEGER DEFAULT 1, cpu_cores INTEGER DEFAULT 1, cpu_threads INTEGER DEFAULT 1, memory_mb INTEGER NOT NULL, disk_path TEXT NOT NULL, disk_size_gb INTEGER NOT NULL, disks_json TEXT DEFAULT NULL, network_name VARCHAR(191) NOT NULL DEFAULT 'default', ip_pool_id BIGINT DEFAULT NULL, status VARCHAR(50) NOT NULL, ip_address VARCHAR(191) DEFAULT NULL, xml_path TEXT NOT NULL, cloud_init_iso_path TEXT DEFAULT NULL, vnc_display VARCHAR(191) DEFAULT NULL, expires_at TEXT DEFAULT NULL, expire_action VARCHAR(32) DEFAULT 'pause', expire_grace_days INTEGER DEFAULT 3, expired_at TEXT DEFAULT NULL, nics_json TEXT DEFAULT NULL, created_at TEXT NOT NULL, updated_at TEXT DEFAULT NULL)",
             "CREATE TABLE IF NOT EXISTS snapshots (id {$idColumn}, vm_id BIGINT NOT NULL, name VARCHAR(191) NOT NULL, status VARCHAR(50) NOT NULL DEFAULT 'created', created_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS audit_logs (id {$idColumn}, username VARCHAR(191) DEFAULT NULL, action VARCHAR(191) NOT NULL, target_type VARCHAR(100) DEFAULT NULL, target_name VARCHAR(191) DEFAULT NULL, detail TEXT DEFAULT NULL, created_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS jobs (id {$idColumn}, name VARCHAR(191) NOT NULL, target_type VARCHAR(100) DEFAULT NULL, target_name VARCHAR(191) DEFAULT NULL, status VARCHAR(50) NOT NULL, output TEXT DEFAULT NULL, created_at TEXT NOT NULL, updated_at TEXT DEFAULT NULL)",
@@ -60,6 +60,10 @@ class SchemaService
             ['templates', 'disk_overcommit_enabled', $boolType . ' NOT NULL DEFAULT 0'],
             ['templates', 'disks_json', 'TEXT DEFAULT NULL'],
             ['templates', 'nics_json', 'TEXT DEFAULT NULL'],
+            ['vms', 'cpu_sockets', 'INTEGER DEFAULT 1'],
+            ['vms', 'cpu_cores', 'INTEGER DEFAULT 1'],
+            ['vms', 'cpu_threads', 'INTEGER DEFAULT 1'],
+            ['vms', 'disks_json', 'TEXT DEFAULT NULL'],
             ['vms', 'ip_pool_id', 'BIGINT DEFAULT NULL'],
             ['vms', 'expires_at', 'TEXT DEFAULT NULL'],
             ['vms', 'expire_action', "VARCHAR(32) DEFAULT 'pause'"],
@@ -79,6 +83,8 @@ class SchemaService
         $this->backfillPoolSubnetDetails();
         $this->migrateTemplateNicJson();
         $this->migrateVmNicJson();
+        $this->migrateVmDiskJson();
+        $this->migrateVmCpuTopology();
     }
 
     private function db(): PDO
@@ -282,6 +288,62 @@ class SchemaService
                 'network_name' => $networkName,
                 'ip_pool_id' => $poolId,
                 'nics_json' => $json,
+                'id' => (int) $row['id'],
+            ]);
+        }
+    }
+
+    private function migrateVmDiskJson(): void
+    {
+        $service = new DiskConfigService();
+        $rows = $this->db()->query('SELECT id, disk_path, disk_size_gb, disks_json FROM vms ORDER BY id ASC')->fetchAll();
+        $update = $this->db()->prepare('UPDATE vms SET disks_json = :disks_json WHERE id = :id');
+
+        foreach ($rows as $row) {
+            $defaultSize = max(5, (int) ($row['disk_size_gb'] ?? 20));
+            $defaultBus = (string) config('libvirt.default_disk_bus');
+            $json = trim((string) ($row['disks_json'] ?? ''));
+            if ($json === '') {
+                $disks = [[
+                    'name' => 'disk0',
+                    'path' => (string) ($row['disk_path'] ?? ''),
+                    'size_gb' => $defaultSize,
+                    'bus' => $defaultBus,
+                    'format' => 'qcow2',
+                    'is_primary' => true,
+                ]];
+            } else {
+                $disks = $service->normalizeJson($json, $defaultSize, $defaultBus, false);
+            }
+
+            $encoded = json_encode($disks, JSON_UNESCAPED_UNICODE);
+            if (!is_string($encoded) || $encoded === $json) {
+                continue;
+            }
+            $update->execute([
+                'disks_json' => $encoded,
+                'id' => (int) $row['id'],
+            ]);
+        }
+    }
+
+    private function migrateVmCpuTopology(): void
+    {
+        $rows = $this->db()->query('SELECT id, cpu, cpu_sockets, cpu_cores, cpu_threads FROM vms ORDER BY id ASC')->fetchAll();
+        $update = $this->db()->prepare('UPDATE vms SET cpu_sockets = :cpu_sockets, cpu_cores = :cpu_cores, cpu_threads = :cpu_threads WHERE id = :id');
+
+        foreach ($rows as $row) {
+            $sockets = (int) ($row['cpu_sockets'] ?? 0);
+            $cores = (int) ($row['cpu_cores'] ?? 0);
+            $threads = (int) ($row['cpu_threads'] ?? 0);
+            if ($sockets > 0 && $cores > 0 && $threads > 0) {
+                continue;
+            }
+            $total = max(1, (int) ($row['cpu'] ?? 1));
+            $update->execute([
+                'cpu_sockets' => 1,
+                'cpu_cores' => $total,
+                'cpu_threads' => 1,
                 'id' => (int) $row['id'],
             ]);
         }

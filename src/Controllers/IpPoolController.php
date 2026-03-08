@@ -15,18 +15,20 @@ class IpPoolController extends BaseController
     {
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
+        $redirectTo = (string) $request->input('redirect_to', '/');
+
         try {
             $id = (int) $request->input('id');
             if ($id > 0) {
                 (new IpPoolService())->update($id, $request->all());
                 (new AuditService())->log('更新 IP 池', 'ip_pool', (string) $id);
-                $this->back('IP 池更新成功。');
+                $this->back('IP 池更新成功。', 'success', $redirectTo);
             }
             (new IpPoolService())->create($request->all());
             (new AuditService())->log('创建 IP 池', 'ip_pool', (string) $request->input('name'));
-            $this->back('IP 池创建成功。');
+            $this->back('IP 池创建成功。', 'success', $redirectTo);
         } catch (\Throwable $e) {
-            $this->back('IP 池保存失败：' . $e->getMessage(), 'error');
+            $this->back('IP 池保存失败：' . $e->getMessage(), 'error', $redirectTo);
         }
     }
 
@@ -34,12 +36,14 @@ class IpPoolController extends BaseController
     {
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
+        $redirectTo = (string) $request->input('redirect_to', '/');
+
         try {
             (new IpPoolService())->delete((int) $request->input('id'));
             (new AuditService())->log('删除 IP 池', 'ip_pool', (string) $request->input('id'));
-            $this->back('IP 池删除成功。');
+            $this->back('IP 池删除成功。', 'success', $redirectTo);
         } catch (\Throwable $e) {
-            $this->back('IP 池删除失败：' . $e->getMessage(), 'error');
+            $this->back('IP 池删除失败：' . $e->getMessage(), 'error', $redirectTo);
         }
     }
 }

@@ -25,7 +25,7 @@ class VmRepository
 
     public function find(int $id): ?array
     {
-        $stmt = $this->db()->prepare('SELECT * FROM vms WHERE id = :id LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT v.*, t.name AS template_name FROM vms v LEFT JOIN templates t ON t.id = v.template_id WHERE v.id = :id LIMIT 1');
         $stmt->execute(['id' => $id]);
         return $stmt->fetch() ?: null;
     }
@@ -37,12 +37,28 @@ class VmRepository
         return $stmt->fetch() ?: null;
     }
 
+    public function countByTemplateId(int $templateId): int
+    {
+        $stmt = $this->db()->prepare('SELECT COUNT(*) FROM vms WHERE template_id = :template_id');
+        $stmt->execute(['template_id' => $templateId]);
+        return (int) $stmt->fetchColumn();
+    }
+
     public function create(array $data): int
     {
         $db = $this->db();
-        $stmt = $db->prepare('INSERT INTO vms (name, template_id, cpu, memory_mb, disk_path, disk_size_gb, network_name, ip_pool_id, status, ip_address, xml_path, cloud_init_iso_path, vnc_display, expires_at, expire_action, expire_grace_days, expired_at, nics_json, created_at) VALUES (:name, :template_id, :cpu, :memory_mb, :disk_path, :disk_size_gb, :network_name, :ip_pool_id, :status, :ip_address, :xml_path, :cloud_init_iso_path, :vnc_display, :expires_at, :expire_action, :expire_grace_days, :expired_at, :nics_json, :created_at)');
+        $stmt = $db->prepare('INSERT INTO vms (name, template_id, cpu, cpu_sockets, cpu_cores, cpu_threads, memory_mb, disk_path, disk_size_gb, disks_json, network_name, ip_pool_id, status, ip_address, xml_path, cloud_init_iso_path, vnc_display, expires_at, expire_action, expire_grace_days, expired_at, nics_json, created_at) VALUES (:name, :template_id, :cpu, :cpu_sockets, :cpu_cores, :cpu_threads, :memory_mb, :disk_path, :disk_size_gb, :disks_json, :network_name, :ip_pool_id, :status, :ip_address, :xml_path, :cloud_init_iso_path, :vnc_display, :expires_at, :expire_action, :expire_grace_days, :expired_at, :nics_json, :created_at)');
         $stmt->execute($data);
         return (int) $db->lastInsertId();
+    }
+
+    public function updateConfig(int $id, array $data): void
+    {
+        $stmt = $this->db()->prepare('UPDATE vms SET cpu = :cpu, cpu_sockets = :cpu_sockets, cpu_cores = :cpu_cores, cpu_threads = :cpu_threads, memory_mb = :memory_mb, disk_size_gb = :disk_size_gb, disks_json = :disks_json, expires_at = :expires_at, expire_action = :expire_action, expire_grace_days = :expire_grace_days, xml_path = :xml_path, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute($data + [
+            'updated_at' => date('c'),
+            'id' => $id,
+        ]);
     }
 
     public function updateStatus(int $id, string $status, ?string $ip = null, ?string $vncDisplay = null): void
