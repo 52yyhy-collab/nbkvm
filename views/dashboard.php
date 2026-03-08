@@ -211,7 +211,7 @@
         <?php foreach ($vms as $vm): ?>
           <?php $status = strtolower((string) ($vm['status'] ?? 'unknown')); ?>
           <tr>
-            <td><strong><?= e((string) $vm['name']) ?></strong><br><span class="muted">IP: <?= e((string) ($vm['ip_address'] ?: '-')) ?></span></td>
+            <td><strong><a href="/vm?id=<?= (int) $vm['id'] ?>"><?= e((string) $vm['name']) ?></a></strong><br><span class="muted">IP: <?= e((string) ($vm['ip_address'] ?: '-')) ?></span></td>
             <td><?= e((string) ($vm['template_name'] ?? 'unknown')) ?></td>
             <td><span class="badge <?= str_contains($status, 'running') ? 'running' : (str_contains($status, 'shut') ? 'shut' : 'unknown') ?>"><?= e($status) ?></span></td>
             <td><?= (int) $vm['cpu'] ?> vCPU / <?= (int) $vm['memory_mb'] ?> MB / <?= (int) $vm['disk_size_gb'] ?> GB</td>
@@ -275,6 +275,26 @@
             </tr>
           <?php endforeach; ?>
           <?php if (!$snapshots): ?><tr><td colspan="6" class="muted">暂无快照</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card span-6">
+    <h2>任务历史</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>时间</th><th>任务</th><th>目标</th><th>状态</th><th>输出</th></tr></thead>
+        <tbody>
+          <?php foreach ($jobs as $job): ?>
+            <tr>
+              <td><?= e((string) $job['created_at']) ?></td>
+              <td><?= e((string) $job['name']) ?></td>
+              <td><?= e((string) (($job['target_type'] ?: '-') . ' / ' . ($job['target_name'] ?: '-'))) ?></td>
+              <td><?= e((string) $job['status']) ?></td>
+              <td><?= e((string) ($job['output'] ?: '-')) ?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php if (!$jobs): ?><tr><td colspan="5" class="muted">暂无任务</td></tr><?php endif; ?>
         </tbody>
       </table>
     </div>

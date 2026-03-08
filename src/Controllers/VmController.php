@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Nbkvm\Controllers;
 use Nbkvm\Services\AuditService;
+use Nbkvm\Services\TaskService;
 use Nbkvm\Services\VmService;
 use Nbkvm\Support\BaseController;
 use Nbkvm\Support\Request;
@@ -13,7 +14,7 @@ class VmController extends BaseController
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new VmService())->createFromTemplate($request->all());
+            (new TaskService())->run('创建虚拟机', 'vm', (string) $request->input('name'), fn () => (new VmService())->createFromTemplate($request->all()));
             (new AuditService())->log('创建虚拟机', 'vm', (string) $request->input('name'));
             $this->back('虚拟机创建成功。');
         } catch (\Throwable $e) {
@@ -25,7 +26,7 @@ class VmController extends BaseController
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new VmService())->start((int) $request->input('id'));
+            (new TaskService())->run('启动虚拟机', 'vm', (string) $request->input('id'), fn () => (new VmService())->start((int) $request->input('id')));
             (new AuditService())->log('启动虚拟机', 'vm', (string) $request->input('id'));
             $this->back('虚拟机已启动。');
         } catch (\Throwable $e) {
@@ -37,7 +38,7 @@ class VmController extends BaseController
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new VmService())->shutdown((int) $request->input('id'));
+            (new TaskService())->run('关闭虚拟机', 'vm', (string) $request->input('id'), fn () => (new VmService())->shutdown((int) $request->input('id')));
             (new AuditService())->log('关闭虚拟机', 'vm', (string) $request->input('id'));
             $this->back('已发送关机指令。');
         } catch (\Throwable $e) {
@@ -49,7 +50,7 @@ class VmController extends BaseController
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new VmService())->destroy((int) $request->input('id'));
+            (new TaskService())->run('强制停止虚拟机', 'vm', (string) $request->input('id'), fn () => (new VmService())->destroy((int) $request->input('id')));
             (new AuditService())->log('强制停止虚拟机', 'vm', (string) $request->input('id'));
             $this->back('已强制关闭虚拟机。');
         } catch (\Throwable $e) {
@@ -61,7 +62,7 @@ class VmController extends BaseController
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new VmService())->delete((int) $request->input('id'), $request->input('remove_storage') === '1');
+            (new TaskService())->run('删除虚拟机', 'vm', (string) $request->input('id'), fn () => (new VmService())->delete((int) $request->input('id'), $request->input('remove_storage') === '1'));
             (new AuditService())->log('删除虚拟机', 'vm', (string) $request->input('id'));
             $this->back('虚拟机已删除。');
         } catch (\Throwable $e) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Nbkvm\Controllers;
 use Nbkvm\Repositories\AuditLogRepository;
 use Nbkvm\Repositories\ImageRepository;
+use Nbkvm\Repositories\JobRepository;
 use Nbkvm\Repositories\SnapshotRepository;
 use Nbkvm\Repositories\TemplateRepository;
 use Nbkvm\Repositories\UserRepository;
@@ -24,6 +25,7 @@ class DashboardController extends BaseController
             'vms' => (new VmRepository())->all(),
             'snapshots' => (new SnapshotRepository())->all(),
             'auditLogs' => (new AuditLogRepository())->latest(20),
+            'jobs' => (new JobRepository())->latest(20),
             'envChecks' => (new EnvironmentCheckService())->report(),
             'libvirtAvailable' => function_exists('libvirt_connect'),
             'authUser' => auth_user(),

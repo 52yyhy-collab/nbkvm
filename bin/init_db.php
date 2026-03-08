@@ -79,6 +79,16 @@ $queries = [
         detail TEXT DEFAULT NULL,
         created_at TEXT NOT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS jobs (
+        id $idColumn,
+        name VARCHAR(191) NOT NULL,
+        target_type VARCHAR(100) DEFAULT NULL,
+        target_name VARCHAR(191) DEFAULT NULL,
+        status VARCHAR(50) NOT NULL,
+        output TEXT DEFAULT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT DEFAULT NULL
+    )",
 ];
 foreach ($queries as $query) {
     $pdo->exec($query);
