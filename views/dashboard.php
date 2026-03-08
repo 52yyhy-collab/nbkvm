@@ -29,6 +29,42 @@
     </form>
   </section>
   <section class="card span-4">
+    <h2>用户管理</h2>
+    <form action="/users" method="post">
+      <?= csrf_field() ?>
+      <label>用户名</label>
+      <input type="text" name="username" required>
+      <label>密码</label>
+      <input type="password" name="password" required>
+      <label>角色</label>
+      <select name="role"><option value="admin">admin</option></select>
+      <div class="spacer"></div>
+      <button class="btn secondary" type="submit">创建用户</button>
+    </form>
+    <div class="spacer"></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>操作</th></tr></thead>
+        <tbody>
+          <?php foreach ($users as $userItem): ?>
+            <tr>
+              <td><?= (int) $userItem['id'] ?></td>
+              <td><?= e((string) $userItem['username']) ?></td>
+              <td><?= e((string) $userItem['role']) ?></td>
+              <td>
+                <form action="/users/delete" method="post" onsubmit="return confirm('确认删除该用户？');">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="id" value="<?= (int) $userItem['id'] ?>">
+                  <button class="btn danger" type="submit">删除</button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card span-4">
     <h2>上传镜像</h2>
     <form action="/images" method="post" enctype="multipart/form-data">
       <?= csrf_field() ?>

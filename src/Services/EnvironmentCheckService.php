@@ -16,7 +16,9 @@ class EnvironmentCheckService
         $checks[] = $this->item('/dev/kvm', file_exists('/dev/kvm') ? '/dev/kvm' : '未找到', file_exists('/dev/kvm'));
         $checks[] = $this->item('存储根目录', (string) config('storage_root'), is_dir((string) config('storage_root')) || @mkdir((string) config('storage_root'), 0755, true));
         $checks[] = $this->item('cloud-localds', $this->cmdVersion((string) config('cloud_init.cloud_localds')), $this->commandExists((string) config('cloud_init.cloud_localds')));
-        $checks[] = $this->item('noVNC', (string) config('novnc.base_url') ?: '未配置', !empty(config('novnc.base_url')));
+        $checks[] = $this->item('noVNC 安装', is_dir('/usr/share/novnc') ? '/usr/share/novnc' : '未安装', is_dir('/usr/share/novnc'));
+        $checks[] = $this->item('websockify', $this->cmdVersion('websockify'), $this->commandExists('websockify'));
+        $checks[] = $this->item('noVNC 地址', (string) config('novnc.base_url') ?: '未配置', !empty(config('novnc.base_url')));
         return $checks;
     }
     private function item(string $name, string $value, bool $ok): array

@@ -35,11 +35,22 @@ function url(string $path = ''): string
 {
     return '/' . ltrim($path, '/');
 }
-function flash(?string $key = null, mixed $value = null): mixed
+function ensure_session(): void
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        return;
+    }
+    if (PHP_SAPI === 'cli') {
+        @session_start();
+        return;
+    }
+    if (!headers_sent()) {
         session_start();
     }
+}
+function flash(?string $key = null, mixed $value = null): mixed
+{
+    ensure_session();
     if ($key !== null && $value !== null) {
         $_SESSION['_flash'][$key] = $value;
         return null;
@@ -59,9 +70,7 @@ function old(string $key, mixed $default = ''): mixed
 }
 function with_old(array $input): void
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_start();
-    }
+    ensure_session();
     $_SESSION['_old'] = $input;
 }
 function clear_old(): void
@@ -72,9 +81,7 @@ function clear_old(): void
 }
 function csrf_token(): string
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_start();
-    }
+    ensure_session();
     if (empty($_SESSION['_csrf'])) {
         $_SESSION['_csrf'] = bin2hex(random_bytes(16));
     }
@@ -86,16 +93,12 @@ function csrf_field(): string
 }
 function verify_csrf(?string $token): bool
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_start();
-    }
+    ensure_session();
     return is_string($token) && !empty($_SESSION['_csrf']) && hash_equals($_SESSION['_csrf'], $token);
 }
 function auth_user(): ?array
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_start();
-    }
+    ensure_session();
     return $_SESSION['auth_user'] ?? null;
 }
 function auth_check(): bool
@@ -104,9 +107,7 @@ function auth_check(): bool
 }
 function auth_login(array $user): void
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_start();
-    }
+    ensure_session();
     $_SESSION['auth_user'] = [
         'id' => $user['id'] ?? null,
         'username' => $user['username'] ?? 'unknown',
@@ -115,8 +116,6 @@ function auth_login(array $user): void
 }
 function auth_logout(): void
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_start();
-    }
+    ensure_session();
     unset($_SESSION['auth_user']);
 }

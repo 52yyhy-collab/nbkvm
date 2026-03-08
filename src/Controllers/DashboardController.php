@@ -6,6 +6,7 @@ use Nbkvm\Repositories\AuditLogRepository;
 use Nbkvm\Repositories\ImageRepository;
 use Nbkvm\Repositories\SnapshotRepository;
 use Nbkvm\Repositories\TemplateRepository;
+use Nbkvm\Repositories\UserRepository;
 use Nbkvm\Repositories\VmRepository;
 use Nbkvm\Services\EnvironmentCheckService;
 use Nbkvm\Services\VmService;
@@ -19,6 +20,7 @@ class DashboardController extends BaseController
         $this->view('dashboard', [
             'images' => (new ImageRepository())->all(),
             'templates' => (new TemplateRepository())->all(),
+            'users' => (new UserRepository())->all(),
             'vms' => (new VmRepository())->all(),
             'snapshots' => (new SnapshotRepository())->all(),
             'auditLogs' => (new AuditLogRepository())->latest(20),
