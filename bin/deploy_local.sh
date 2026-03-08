@@ -16,8 +16,10 @@ echo "[2/6] 启动 libvirt / mariadb"
 sudo systemctl daemon-reload
 sudo systemctl enable --now libvirtd mariadb
 echo "[3/6] 准备存储目录"
-sudo mkdir -p /var/libvirt/images/nbkvm
-sudo chmod 755 /var/libvirt/images /var/libvirt/images/nbkvm
+sudo mkdir -p /var/libvirt/images/nbkvm/{uploads,templates,vms}
+sudo chown -R "$(id -un)":libvirt /var/libvirt/images/nbkvm || true
+sudo chmod 755 /var/libvirt/images
+sudo chmod -R 775 /var/libvirt/images/nbkvm
 echo "[4/6] 初始化数据库"
 cd "$APP_DIR"
 php bin/init_db.php

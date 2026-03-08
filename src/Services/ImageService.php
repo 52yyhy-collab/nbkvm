@@ -31,6 +31,7 @@ class ImageService
                 throw new RuntimeException('无法保存上传文件。');
             }
         }
+        @chmod($destination, 0644);
         return ($this->images ?? new ImageRepository())->create([
             'name' => $name,
             'original_name' => $originalName,

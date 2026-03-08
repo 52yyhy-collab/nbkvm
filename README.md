@@ -121,6 +121,13 @@ bash bin/start_novnc_proxy.sh test-vm-01 6080
 ```text
 http://你的主机IP:6080/vnc.html
 ```
+## 存储目录权限
+建议让运行 Web 的用户对 `storage_root` 可写，同时让 libvirt/qemu 进程可读：
+```bash
+sudo mkdir -p /var/libvirt/images/nbkvm/{uploads,templates,vms}
+sudo chown -R $(whoami):libvirt /var/libvirt/images/nbkvm
+sudo chmod -R 775 /var/libvirt/images/nbkvm
+```
 ## 删除与清理
 当删除虚拟机并勾选“同时删磁盘”时，会清理：
 - 系统磁盘
