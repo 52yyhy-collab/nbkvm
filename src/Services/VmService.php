@@ -127,12 +127,7 @@ class VmService
         }
         $libvirt->undefine($vm['name']);
         if ($removeStorage) {
-            @unlink($vm['disk_path']);
-            @unlink($vm['xml_path']);
-            if (!empty($vm['cloud_init_iso_path'])) {
-                @unlink((string) $vm['cloud_init_iso_path']);
-            }
-            @rmdir(dirname($vm['disk_path']));
+            (new CleanupService())->removeVmFiles($vm);
         }
         (new VmRepository())->delete($id);
     }

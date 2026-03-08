@@ -41,6 +41,7 @@
       <div class="spacer"></div>
       <button class="btn secondary" type="submit">创建用户</button>
     </form>
+    <p class="muted">只有 admin 可以管理用户；operator 可执行资源写操作；readonly 仅查看。</p>
     <div class="spacer"></div>
     <div class="table-wrap">
       <table class="table">
@@ -219,6 +220,7 @@
               <?php if (!empty($novncBaseUrl) && !empty($vm['vnc_display'])): ?>
                 <a class="btn secondary" target="_blank" href="<?= e(rtrim($novncBaseUrl, '/') . config('novnc.path') . '?autoconnect=true&path=' . rawurlencode((string) $vm['vnc_display'])) ?>">打开 noVNC</a>
               <?php endif; ?>
+              <div class="muted">代理命令：<code><?= e((new \Nbkvm\Services\NoVncService())->helperCommand((string) $vm['name'])) ?></code></div>
             </td>
             <td>
               <div class="actions">

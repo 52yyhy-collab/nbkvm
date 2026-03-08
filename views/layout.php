@@ -16,6 +16,7 @@
     <div class="muted">
       <?php if (auth_check()): ?>
         当前用户：<code><?= e((string) (auth_user()['username'] ?? 'unknown')) ?></code>
+        / 角色：<code><?= e(auth_role()) ?></code>
         <form class="inline" action="/logout" method="post" style="display:inline-block;margin-left:12px;">
           <?= csrf_field() ?>
           <button class="btn secondary" type="submit">退出</button>
