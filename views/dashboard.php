@@ -28,6 +28,7 @@
       <button class="btn secondary" type="submit">更新密码</button>
     </form>
   </section>
+  <?php if (auth_is_admin()): ?>
   <section class="card span-4">
     <h2>用户管理</h2>
     <form action="/users" method="post">
@@ -37,7 +38,11 @@
       <label>密码</label>
       <input type="password" name="password" required>
       <label>角色</label>
-      <select name="role"><option value="admin">admin</option></select>
+      <select name="role">
+        <option value="admin">admin</option>
+        <option value="operator">operator</option>
+        <option value="readonly">readonly</option>
+      </select>
       <div class="spacer"></div>
       <button class="btn secondary" type="submit">创建用户</button>
     </form>
@@ -65,6 +70,7 @@
       </table>
     </div>
   </section>
+<?php endif; ?>
   <section class="card span-4">
     <h2>上传镜像</h2>
     <form action="/images" method="post" enctype="multipart/form-data">
@@ -217,13 +223,30 @@
             <td><?= (int) $vm['cpu'] ?> vCPU / <?= (int) $vm['memory_mb'] ?> MB / <?= (int) $vm['disk_size_gb'] ?> GB</td>
             <td>
               <div><?= e((string) ($vm['vnc_display'] ?: '-')) ?></div>
+              <div class="muted">代理状态：<?= !empty($noVncStatus[$vm['name']]['running']) ? '运行中' : '未运行' ?></div>
               <?php if (!empty($novncBaseUrl) && !empty($vm['vnc_display'])): ?>
                 <a class="btn secondary" target="_blank" href="<?= e(rtrim($novncBaseUrl, '/') . config('novnc.path') . '?autoconnect=true&path=' . rawurlencode((string) $vm['vnc_display'])) ?>">打开 noVNC</a>
+              <?php endif; ?>
+              <?php if (auth_can_write()): ?>
+                <div class="actions">
+                  <form action="/novnc/start" method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="vm_name" value="<?= e((string) $vm['name']) ?>">
+                    <input type="hidden" name="port" value="6080">
+                    <button class="btn secondary" type="submit">启动代理</button>
+                  </form>
+                  <form action="/novnc/stop" method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="vm_name" value="<?= e((string) $vm['name']) ?>">
+                    <button class="btn secondary" type="submit">停止代理</button>
+                  </form>
+                </div>
               <?php endif; ?>
               <div class="muted">代理命令：<code><?= e((new \Nbkvm\Services\NoVncService())->helperCommand((string) $vm['name'])) ?></code></div>
             </td>
             <td>
               <div class="actions">
+                <?php if (auth_can_write()): ?>
                 <form action="/vms/start" method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn success" type="submit">启动</button></form>
                 <form action="/vms/shutdown" method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn warn" type="submit">关机</button></form>
                 <form action="/vms/destroy" method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn danger" type="submit">强停</button></form>
@@ -234,6 +257,7 @@
                   <label class="muted"><input type="checkbox" name="remove_storage" value="1"> 同时删磁盘</label>
                   <button class="btn secondary" type="submit">删除</button>
                 </form>
+                <?php endif; ?>
               </div>
             </td>
           </tr>
@@ -258,6 +282,7 @@
               <td><?= e((string) $snapshot['created_at']) ?></td>
               <td>
                 <div class="actions">
+                  <?php if (auth_can_write()): ?>
                   <form action="/snapshots/revert" method="post">
                     <?= csrf_field() ?>
                     <input type="hidden" name="vm_name" value="<?= e((string) ($snapshot['vm_name'] ?? '')) ?>">
@@ -270,6 +295,7 @@
                     <input type="hidden" name="snapshot_name" value="<?= e((string) $snapshot['name']) ?>">
                     <button class="btn secondary" type="submit">删除</button>
                   </form>
+                  <?php endif; ?>
                 </div>
               </td>
             </tr>

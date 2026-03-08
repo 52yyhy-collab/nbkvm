@@ -177,6 +177,14 @@ class LibvirtService
         if ($result->succeeded() && preg_match('/(\d+\.\d+\.\d+\.\d+)\/\d+/', $result->stdout, $m)) {
             return $m[1];
         }
+        $leases = '/var/lib/libvirt/dnsmasq/default.leases';
+        if (is_file($leases)) {
+            foreach (file($leases, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                if (str_contains($line, $name) && preg_match('/\s(\d+\.\d+\.\d+\.\d+)\s/', ' ' . $line . ' ', $m)) {
+                    return $m[1];
+                }
+            }
+        }
         return null;
     }
 }

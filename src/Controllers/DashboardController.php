@@ -10,6 +10,7 @@ use Nbkvm\Repositories\TemplateRepository;
 use Nbkvm\Repositories\UserRepository;
 use Nbkvm\Repositories\VmRepository;
 use Nbkvm\Services\EnvironmentCheckService;
+use Nbkvm\Services\NoVncService;
 use Nbkvm\Services\VmService;
 use Nbkvm\Support\BaseController;
 use Nbkvm\Support\Request;
@@ -18,11 +19,17 @@ class DashboardController extends BaseController
     public function index(Request $request): void
     {
         (new VmService())->refreshStates();
+        $vms = (new VmRepository())->all();
+        $noVnc = new NoVncService();
+        $noVncStatus = [];
+        foreach ($vms as $vm) {
+            $noVncStatus[$vm['name']] = $noVnc->status((string) $vm['name']);
+        }
         $this->view('dashboard', [
             'images' => (new ImageRepository())->all(),
             'templates' => (new TemplateRepository())->all(),
             'users' => (new UserRepository())->all(),
-            'vms' => (new VmRepository())->all(),
+            'vms' => $vms,
             'snapshots' => (new SnapshotRepository())->all(),
             'auditLogs' => (new AuditLogRepository())->latest(20),
             'jobs' => (new JobRepository())->latest(20),
@@ -30,6 +37,7 @@ class DashboardController extends BaseController
             'libvirtAvailable' => function_exists('libvirt_connect'),
             'authUser' => auth_user(),
             'novncBaseUrl' => (string) config('novnc.base_url'),
+            'noVncStatus' => $noVncStatus,
         ]);
     }
 }
