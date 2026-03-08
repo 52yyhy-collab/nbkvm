@@ -229,7 +229,7 @@
     <h2>镜像列表</h2>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>大小</th><th>路径</th></tr></thead>
+        <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>大小</th><th>路径</th><th>操作</th></tr></thead>
         <tbody>
         <?php foreach ($images as $image): ?>
           <tr>
@@ -238,6 +238,17 @@
             <td><?= e((string) $image['extension']) ?></td>
             <td><?= number_format(((int) $image['size_bytes']) / 1024 / 1024, 2) ?> MB</td>
             <td><code><?= e((string) $image['path']) ?></code></td>
+            <td>
+              <?php if (auth_can_write() && !in_array(strtolower((string) $image['extension']), ['iso','qcow2'], true)): ?>
+                <form action="/images/convert/qcow2" method="post">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="id" value="<?= (int) $image['id'] ?>">
+                  <button class="btn secondary" type="submit">转 qcow2</button>
+                </form>
+              <?php else: ?>
+                <span class="muted">-</span>
+              <?php endif; ?>
+            </td>
           </tr>
         <?php endforeach; ?>
         <?php if (!$images): ?><tr><td colspan="5" class="muted">暂无镜像</td></tr><?php endif; ?>

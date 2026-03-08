@@ -15,7 +15,7 @@ class VmRepository
     }
     public function all(): array
     {
-        return $this->db()->query('SELECT v.*, t.name AS template_name FROM vms v LEFT JOIN templates t ON t.id = v.template_id ORDER BY v.created_at DESC')->fetchAll();
+        return $this->db()->query('SELECT v.*, t.name AS template_name, p.name AS ip_pool_name FROM vms v LEFT JOIN templates t ON t.id = v.template_id LEFT JOIN ip_pools p ON p.id = v.ip_pool_id ORDER BY v.created_at DESC')->fetchAll();
     }
     public function find(int $id): ?array
     {
@@ -32,7 +32,7 @@ class VmRepository
     public function create(array $data): int
     {
         $db = $this->db();
-        $stmt = $db->prepare('INSERT INTO vms (name, template_id, cpu, memory_mb, disk_path, disk_size_gb, network_name, status, ip_address, xml_path, cloud_init_iso_path, vnc_display, created_at) VALUES (:name, :template_id, :cpu, :memory_mb, :disk_path, :disk_size_gb, :network_name, :status, :ip_address, :xml_path, :cloud_init_iso_path, :vnc_display, :created_at)');
+        $stmt = $db->prepare('INSERT INTO vms (name, template_id, cpu, memory_mb, disk_path, disk_size_gb, network_name, ip_pool_id, status, ip_address, xml_path, cloud_init_iso_path, vnc_display, created_at) VALUES (:name, :template_id, :cpu, :memory_mb, :disk_path, :disk_size_gb, :network_name, :ip_pool_id, :status, :ip_address, :xml_path, :cloud_init_iso_path, :vnc_display, :created_at)');
         $stmt->execute($data);
         return (int) $db->lastInsertId();
     }

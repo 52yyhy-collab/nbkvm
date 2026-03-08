@@ -55,6 +55,7 @@ $queries = [
         disk_path TEXT NOT NULL,
         disk_size_gb INTEGER NOT NULL,
         network_name VARCHAR(191) NOT NULL,
+        ip_pool_id BIGINT DEFAULT NULL,
         status VARCHAR(50) NOT NULL,
         ip_address VARCHAR(191) DEFAULT NULL,
         xml_path TEXT NOT NULL,
@@ -89,9 +90,39 @@ $queries = [
         created_at TEXT NOT NULL,
         updated_at TEXT DEFAULT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS ip_pools (
+        id $idColumn,
+        name VARCHAR(191) NOT NULL UNIQUE,
+        network_name VARCHAR(191) NOT NULL,
+        gateway VARCHAR(64) NOT NULL,
+        prefix_length INTEGER NOT NULL,
+        dns_servers TEXT DEFAULT NULL,
+        start_ip VARCHAR(64) NOT NULL,
+        end_ip VARCHAR(64) NOT NULL,
+        interface_name VARCHAR(64) DEFAULT 'eth0',
+        created_at TEXT NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS ip_pool_addresses (
+        id $idColumn,
+        pool_id BIGINT NOT NULL,
+        ip_address VARCHAR(64) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'free',
+        vm_id BIGINT DEFAULT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT DEFAULT NULL
+    )",
 ];
 foreach ($queries as $query) {
     $pdo->exec($query);
+}
+$needsIpPoolColumn = false;
+try {
+    $pdo->query('SELECT ip_pool_id FROM vms LIMIT 1');
+} catch (Throwable) {
+    $needsIpPoolColumn = true;
+}
+if ($needsIpPoolColumn) {
+    $pdo->exec('ALTER TABLE vms ADD COLUMN ip_pool_id BIGINT DEFAULT NULL');
 }
 $username = (string) config('auth.default_username');
 $exists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username');

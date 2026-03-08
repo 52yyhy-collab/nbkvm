@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Nbkvm\Controllers;
 use Nbkvm\Repositories\AuditLogRepository;
 use Nbkvm\Repositories\ImageRepository;
+use Nbkvm\Repositories\IpAddressRepository;
+use Nbkvm\Repositories\IpPoolRepository;
 use Nbkvm\Repositories\JobRepository;
 use Nbkvm\Repositories\SnapshotRepository;
 use Nbkvm\Repositories\TemplateRepository;
@@ -27,6 +29,8 @@ class DashboardController extends BaseController
         }
         $this->view('dashboard', [
             'images' => (new ImageRepository())->all(),
+            'ipPools' => (new IpPoolRepository())->all(),
+            'ipAddresses' => (new IpAddressRepository())->all(),
             'templates' => (new TemplateRepository())->all(),
             'users' => (new UserRepository())->all(),
             'vms' => $vms,
