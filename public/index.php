@@ -27,6 +27,8 @@ $router->post('/vms/shutdown', [VmController::class, 'shutdown']);
 $router->post('/vms/destroy', [VmController::class, 'destroy']);
 $router->post('/vms/delete', [VmController::class, 'delete']);
 $router->post('/snapshots', [SnapshotController::class, 'store']);
+$router->post('/snapshots/revert', [SnapshotController::class, 'revert']);
+$router->post('/snapshots/delete', [SnapshotController::class, 'delete']);
 $request = new Request();
 $path = $request->path();
 if (!auth_check() && !in_array($path, ['/login'], true)) {

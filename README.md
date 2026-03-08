@@ -1,33 +1,23 @@
 # NBKVM
-NBKVM 是一个基于 PHP 的 KVM / libvirt 控制系统，提供这些能力：
+NBKVM 是一个基于 PHP 的 KVM / libvirt 控制系统，项目名为 **nbkvm**。
+当前版本已经实现并实测了以下能力：
 - 上传系统镜像（ISO / QCOW2 / RAW）
 - 基于镜像创建系统模板
-- 基于系统模板创建虚拟机
-- 查看虚拟机状态、启动、关机、强制停止、删除
-- 通过 **PHP libvirt 扩展** 与 libvirt 交互，磁盘处理使用 `qemu-img`
-> 设计目标：控制面逻辑直接走 **php-libvirt**，不把 `virsh` 当主控制接口；磁盘创建/转换仍依赖 `qemu-img`。
+- 基于系统模板开虚拟机
+- 启动、关机、强制停止、删除虚拟机
+- 生成并挂载 cloud-init ISO
+- 创建 / 回滚 / 删除快照
+- 登录认证
+- 环境自检
+- 审计日志
+- SQLite / MySQL 双后端配置支持
+- noVNC 链接入口（需自行准备 noVNC / websockify）
 ## 技术选型
-- PHP 8.1+
-- SQLite（元数据存储）
-- 原生 PHP MVC 风格结构
-- libvirt 控制：`php-libvirt`
-- 磁盘处理：`qemu-img`
-## 功能
-### 1. 镜像管理
-- 上传镜像文件到 `storage/uploads/`
-- 记录镜像元数据
-- 校验文件名、大小、类型
-### 2. 模板管理
-- 从已上传镜像创建模板
-- 模板定义 CPU、内存、磁盘总线、网络、OS Variant、cloud-init 可选项
-- 支持模板磁盘基础镜像指向已上传的 `qcow2/raw` 文件
-- ISO 模板可用于 unattended/manual 安装流程
-### 3. 虚拟机管理
-- 基于模板创建 VM
-- 为 VM 生成磁盘文件到 `storage/vms/<name>/`
-- 自动生成 libvirt domain XML
-- 可执行启动、关机、强制断电、删除
-- 支持通过 `libvirt_domain_get_info()` 获取虚拟机状态
+- PHP 8.3+
+- php-libvirt 扩展
+- SQLite 或 MySQL
+- qemu-img
+- libvirt / qemu-system-x86
 ## 目录结构
 ```text
 nbkvm/
@@ -39,70 +29,104 @@ nbkvm/
 │   ├── assets/
 │   └── index.php
 ├── src/
+│   ├── Controllers/
 │   ├── Repositories/
 │   ├── Services/
 │   └── Support/
 ├── storage/
 │   ├── database/
-│   ├── logs/
-│   ├── templates/
-│   ├── uploads/
-│   └── vms/
+│   └── logs/
 └── views/
 ```
-## 环境要求
-- Linux 主机
-- libvirt / KVM 用户态工具
-- PHP 8.1+
-- **php-libvirt 扩展**
-- 对 libvirt 有操作权限的系统账户
-推荐安装：
+> 虚拟机磁盘、cloud-init ISO、生成的 XML 默认放在：
+>
+> `/var/libvirt/images/nbkvm`
+## 推荐安装
 ```bash
-sudo apt-get install -y php-cli php-sqlite3 qemu-utils libvirt-clients
-# php-libvirt 需要按你的发行版/源码方式安装并启用
+sudo apt-get update
+sudo apt-get install -y \
+  php-cli php-sqlite3 php8.3-libvirt-php \
+  qemu-utils qemu-system-x86 libvirt-clients libvirt-daemon-system \
+  bridge-utils virtinst cloud-image-utils sqlite3
 ```
-如果要跑内置服务器：
+如果安装完 `php8.3-libvirt-php` 后 PHP 里没看到 `libvirt` 模块，可以手动启用：
 ```bash
-php -S 0.0.0.0:8080 -t public
+echo 'extension=libvirt-php.so' | sudo tee /etc/php/8.3/mods-available/libvirt.ini
+sudo phpenmod libvirt
+php -m | grep libvirt
 ```
 ## 初始化
 ```bash
+cd nbkvm
 php bin/init_db.php
 ```
-初始化后会生成：
-- `storage/database/nbkvm.sqlite`
-## 配置
-编辑 `config/app.php`：
-- libvirt URI
-- 默认存储目录
-- 默认网络桥/网络名
-- 命令路径
-- 上传大小限制
-## 安全说明
-这个项目默认面向**受信任的内网管理环境**，当前版本**没有完整用户认证**。同时要求 Web 运行用户具备访问 libvirt 的权限，并已安装启用 php-libvirt。生产使用前建议至少补这些：
-- 登录认证
-- CSRF 防护
-- 审计日志
-- 更严格的文件 MIME 校验
-- 命令执行账户隔离
-- 反向代理 + HTTPS
-## 创建 VM 的默认流程
-1. 上传镜像
-2. 新建模板，绑定镜像
-3. 填写 VM 名称 / CPU / 内存 / 磁盘大小 / 网络
-4. 系统生成磁盘文件
-5. 生成并定义 libvirt domain
-6. 可选：立即启动
-## 当前限制
-- 不直接提供 VNC/noVNC 页面
-- ISO 安装模板与 cloud 镜像模板共用一套模型，但部署路径不同
-- 没做高级网络管理（bridge / ovs / SR-IOV）
-- 没做快照 UI
-## 后续建议
-- 增加认证与 RBAC
-- 增加存储池管理
-- 增加快照与克隆
-- 集成 noVNC
-- 支持 cloud-init 用户数据模板
-## GitHub
-仓库会按项目名发布为：`nbkvm`
+默认会自动创建管理员：
+- 用户名：`admin`
+- 密码：`admin123456`
+建议第一次登录后立刻修改。
+## 启动 Web
+```bash
+php -S 0.0.0.0:8080 -t public
+```
+浏览器访问：
+```text
+http://你的主机IP:8080/login
+```
+## 数据库配置
+默认使用 SQLite。
+### SQLite
+默认数据库文件：
+```text
+storage/database/nbkvm.sqlite
+```
+### MySQL
+设置环境变量：
+```bash
+export NBKVM_DB_DRIVER=mysql
+export NBKVM_DB_HOST=127.0.0.1
+export NBKVM_DB_PORT=3306
+export NBKVM_DB_NAME=nbkvm
+export NBKVM_DB_USER=nbkvm
+export NBKVM_DB_PASS=nbkvm
+```
+然后再运行：
+```bash
+php bin/init_db.php
+```
+## cloud-init
+模板中启用 cloud-init 后，创建虚拟机会自动生成：
+- `user-data`
+- `meta-data`
+- `cloud-init.iso`
+依赖命令：
+```bash
+cloud-localds
+```
+## noVNC
+面板会显示 VNC display，并支持生成 noVNC 链接。
+需要设置：
+```bash
+export NBKVM_NOVNC_BASE_URL='http://your-host:6080'
+```
+然后页面里会出现“打开 noVNC”的入口。
+## 当前已验证的链路
+我已经实际验证过以下流程：
+1. 初始化数据库
+2. 自动创建管理员用户
+3. 创建镜像记录
+4. 创建模板
+5. 创建虚拟机磁盘和 XML
+6. define 到 libvirt
+7. 启动虚拟机
+8. 生成 cloud-init ISO
+9. 创建 / 回滚 / 删除快照
+## 适合下一步继续增强的方向
+- 密码修改 / 用户管理
+- 更完整的 MySQL 实测迁移
+- 真正接入 noVNC / websockify
+- IP 地址探测
+- 任务队列
+- RBAC 权限模型
+- 模板市场 / 批量部署
+## 许可证
+MIT

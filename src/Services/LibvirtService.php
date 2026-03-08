@@ -108,7 +108,7 @@ class LibvirtService
     public function createDiskFromImage(string $sourceImage, string $outputDisk, int $sizeGb, ?string $sourceExtension = null): void
     {
         if (!is_dir(dirname($outputDisk))) {
-            mkdir(dirname($outputDisk), 075, true);
+            mkdir(dirname($outputDisk), 493, true);
         }
         $qemuImg = (string) config('libvirt.qemu_img');
         $format = $this->detectImageFormat($sourceImage, $sourceExtension);

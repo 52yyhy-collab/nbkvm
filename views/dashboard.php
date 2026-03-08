@@ -197,7 +197,7 @@
     <h2>快照记录</h2>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>ID</th><th>虚拟机</th><th>快照名</th><th>状态</th><th>时间</th></tr></thead>
+        <thead><tr><th>ID</th><th>虚拟机</th><th>快照名</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
         <tbody>
           <?php foreach ($snapshots as $snapshot): ?>
             <tr>
@@ -206,9 +206,25 @@
               <td><?= e((string) $snapshot['name']) ?></td>
               <td><?= e((string) $snapshot['status']) ?></td>
               <td><?= e((string) $snapshot['created_at']) ?></td>
+              <td>
+                <div class="actions">
+                  <form action="/snapshots/revert" method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="vm_name" value="<?= e((string) ($snapshot['vm_name'] ?? '')) ?>">
+                    <input type="hidden" name="snapshot_name" value="<?= e((string) $snapshot['name']) ?>">
+                    <button class="btn warn" type="submit">回滚</button>
+                  </form>
+                  <form action="/snapshots/delete" method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="vm_name" value="<?= e((string) ($snapshot['vm_name'] ?? '')) ?>">
+                    <input type="hidden" name="snapshot_name" value="<?= e((string) $snapshot['name']) ?>">
+                    <button class="btn secondary" type="submit">删除</button>
+                  </form>
+                </div>
+              </td>
             </tr>
           <?php endforeach; ?>
-          <?php if (!$snapshots): ?><tr><td colspan="5" class="muted">暂无快照</td></tr><?php endif; ?>
+          <?php if (!$snapshots): ?><tr><td colspan="6" class="muted">暂无快照</td></tr><?php endif; ?>
         </tbody>
       </table>
     </div>

@@ -34,4 +34,30 @@ class SnapshotService
             'created_at' => date('c'),
         ]);
     }
+    public function revert(string $vmName, string $snapshotName): void
+    {
+        $cmd = sprintf('%s -c %s snapshot-revert --domain %s %s --running 2>&1',
+            escapeshellcmd((string) config('libvirt.virsh')),
+            escapeshellarg((string) config('libvirt.uri')),
+            escapeshellarg($vmName),
+            escapeshellarg($snapshotName)
+        );
+        exec($cmd, $output, $code);
+        if ($code !== 0) {
+            throw new RuntimeException('回滚快照失败：' . implode("\n", $output));
+        }
+    }
+    public function delete(string $vmName, string $snapshotName): void
+    {
+        $cmd = sprintf('%s -c %s snapshot-delete --domain %s --snapshotname %s 2>&1',
+            escapeshellcmd((string) config('libvirt.virsh')),
+            escapeshellarg((string) config('libvirt.uri')),
+            escapeshellarg($vmName),
+            escapeshellarg($snapshotName)
+        );
+        exec($cmd, $output, $code);
+        if ($code !== 0) {
+            throw new RuntimeException('删除快照失败：' . implode("\n", $output));
+        }
+    }
 }
