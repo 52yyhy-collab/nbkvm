@@ -1,0 +1,13 @@
+vendor/
+.env
+.env.local
+/storage/database/*.sqlite
+/storage/uploads/*
+!/storage/uploads/.gitkeep
+/storage/templates/*
+!/storage/templates/.gitkeep
+/storage/vms/*
+!/storage/vms/.gitkeep
+/storage/logs/*
+!/storage/logs/.gitkeep
+/public/assets/*.map

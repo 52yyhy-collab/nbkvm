@@ -1,0 +1,122 @@
+<?php
+
+declare(strict_types=1);
+namespace Nbkvm\Services;
+use Nbkvm\Repositories\ImageRepository;
+use Nbkvm\Repositories\TemplateRepository;
+use Nbkvm\Repositories\VmRepository;
+use RuntimeException;
+class VmService
+{
+    public function createFromTemplate(array $data): int
+    {
+        $name = strtolower(trim((string) ($data['name'] ?? '')));
+        if ($name === '' || !preg_match('/^[a-z0-9][a-z0-9-]{1,30}$/', $name)) {
+            throw new RuntimeException('虚拟机名称不合法，只允许小写字母、数字和中划线，长度 2-31。');
+        }
+        $templateId = (int) ($data['template_id'] ?? 0);
+        $template = (new TemplateRepository())->find($templateId);
+        if (!$template) {
+            throw new RuntimeException('模板不存在。');
+        }
+        $vmRepository = new VmRepository();
+        if ($vmRepository->findByName($name)) {
+            throw new RuntimeException('虚拟机名称已存在。');
+        }
+        $image = (new ImageRepository())->find((int) $template['image_id']);
+        if (!$image) {
+            throw new RuntimeException('模板关联镜像不存在。');
+        }
+        $cpu = max(1, (int) ($data['cpu'] ?? $template['cpu']));
+        $memoryMb = max(256, (int) ($data['memory_mb'] ?? $template['memory_mb']));
+        $diskSizeGb = max(5, (int) ($data['disk_size_gb'] ?? $template['disk_size_gb']));
+        $networkName = trim((string) ($data['network_name'] ?? $template['network_name']));
+        $vmDir = rtrim(config('vm_path'), '/') . '/' . $name;
+        if (!is_dir($vmDir)) {
+            mkdir($vmDir, 0775, true);
+        }
+        $diskPath = $vmDir . '/' . $name . '.qcow2';
+        $xmlPath = $vmDir . '/' . $name . '.xml';
+        $libvirt = new LibvirtService();
+        $libvirt->createDiskFromImage($image['path'], $diskPath, $diskSizeGb, $image['extension']);
+        $vm = [
+            'name' => $name,
+            'template_id' => $templateId,
+            'cpu' => $cpu,
+            'memory_mb' => $memoryMb,
+            'disk_path' => $diskPath,
+            'disk_size_gb' => $diskSizeGb,
+            'network_name' => $networkName,
+            'status' => 'defined',
+            'ip_address' => null,
+            'xml_path' => $xmlPath,
+            'created_at' => date('c'),
+        ];
+        $xml = (new DomainXmlBuilder())->build($vm, $template, $image);
+        file_put_contents($xmlPath, $xml);
+        $libvirt->define($xml);
+        $vmId = $vmRepository->create($vm);
+        if (($data['autostart'] ?? '') === '1') {
+            $libvirt->start($name);
+            $info = $libvirt->domInfo($name);
+            $vmRepository->updateStatus($vmId, $libvirt->stateLabel($info['state'] ?? 1));
+        }
+        return $vmId;
+    }
+    public function refreshStates(): void
+    {
+        $libvirt = new LibvirtService();
+        $repo = new VmRepository();
+        foreach ($repo->all() as $vm) {
+            $info = $libvirt->domInfo($vm['name']);
+            $repo->updateStatus((int) $vm['id'], $libvirt->stateLabel($info['state'] ?? null), null);
+        }
+    }
+    public function start(int $id): void
+    {
+        $vm = (new VmRepository())->find($id);
+        if (!$vm) {
+            throw new RuntimeException('虚拟机不存在。');
+        }
+        $libvirt = new LibvirtService();
+        $libvirt->start($vm['name']);
+        (new VmRepository())->updateStatus($id, 'running', null);
+    }
+    public function shutdown(int $id): void
+    {
+        $vm = (new VmRepository())->find($id);
+        if (!$vm) {
+            throw new RuntimeException('虚拟机不存在。');
+        }
+        (new LibvirtService())->shutdown($vm['name']);
+        (new VmRepository())->updateStatus($id, 'shutting down');
+    }
+    public function destroy(int $id): void
+    {
+        $vm = (new VmRepository())->find($id);
+        if (!$vm) {
+            throw new RuntimeException('虚拟机不存在。');
+        }
+        (new LibvirtService())->destroy($vm['name']);
+        (new VmRepository())->updateStatus($id, 'shut off');
+    }
+    public function delete(int $id, bool $removeStorage = false): void
+    {
+        $vm = (new VmRepository())->find($id);
+        if (!$vm) {
+            throw new RuntimeException('虚拟机不存在。');
+        }
+        $libvirt = new LibvirtService();
+        try {
+            $libvirt->destroy($vm['name']);
+        } catch (\Throwable) {
+        }
+        $libvirt->undefine($vm['name']);
+        if ($removeStorage) {
+            @unlink($vm['disk_path']);
+            @unlink($vm['xml_path']);
+            @rmdir(dirname($vm['disk_path']));
+        }
+        (new VmRepository())->delete($id);
+    }
+}

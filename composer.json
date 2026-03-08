@@ -1,0 +1,13 @@
+{
+  "name": "nm/nbkvm",
+  "description": "NBKVM - PHP libvirt control panel for image upload, template management, and VM provisioning",
+  "type": "project",
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "Nbkvm\\": "src/"
+    }
+  }
+}
