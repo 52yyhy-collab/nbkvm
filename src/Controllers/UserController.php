@@ -20,6 +20,18 @@ class UserController extends BaseController
             $this->back('用户创建失败：' . $e->getMessage(), 'error');
         }
     }
+    public function updateRole(Request $request): never
+    {
+        $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireAdmin();
+        try {
+            (new UserService())->updateRole((int) $request->input('id'), (string) $request->input('role'));
+            (new AuditService())->log('修改用户角色', 'user', (string) $request->input('id'));
+            $this->back('用户角色更新成功。');
+        } catch (\Throwable $e) {
+            $this->back('用户角色更新失败：' . $e->getMessage(), 'error');
+        }
+    }
     public function delete(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));

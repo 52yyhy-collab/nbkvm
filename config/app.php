@@ -35,6 +35,9 @@ return [
         'base_url' => getenv('NBKVM_NOVNC_BASE_URL') ?: '',
         'path' => getenv('NBKVM_NOVNC_PATH') ?: '/vnc.html',
     ],
+    'queue' => [
+        'enabled' => (getenv('NBKVM_QUEUE_ENABLED') ?: '0') === '1',
+    ],
     'cloud_init' => [
         'enabled' => true,
         'cloud_localds' => getenv('NBKVM_CLOUD_LOCALDS') ?: 'cloud-localds',

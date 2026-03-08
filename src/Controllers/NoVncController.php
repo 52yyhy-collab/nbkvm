@@ -2,12 +2,29 @@
 
 declare(strict_types=1);
 namespace Nbkvm\Controllers;
+use Nbkvm\Repositories\VmRepository;
 use Nbkvm\Services\AuditService;
 use Nbkvm\Services\NoVncService;
 use Nbkvm\Support\BaseController;
 use Nbkvm\Support\Request;
 class NoVncController extends BaseController
 {
+    public function open(Request $request): never
+    {
+        $vm = (new VmRepository())->find((int) $request->input('id'));
+        if (!$vm) {
+            $this->back('虚拟机不存在。', 'error', '/');
+        }
+        $this->requireWrite();
+        $port = 6080 + (int) $vm['id'];
+        $service = new NoVncService();
+        if (!$service->isRunning((string) $vm['name'])) {
+            $service->start((string) $vm['name'], $port);
+        }
+        (new AuditService())->log('打开 noVNC', 'vm', (string) $vm['name']);
+        $host = preg_replace('/:\d+$/', '', $request->host());
+        redirect('http://' . $host . ':' . $port . '/vnc.html?autoconnect=true');
+    }
     public function start(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));

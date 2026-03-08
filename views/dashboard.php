@@ -56,7 +56,18 @@
             <tr>
               <td><?= (int) $userItem['id'] ?></td>
               <td><?= e((string) $userItem['username']) ?></td>
-              <td><?= e((string) $userItem['role']) ?></td>
+              <td>
+                <form action="/users/role" method="post">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="id" value="<?= (int) $userItem['id'] ?>">
+                  <select name="role">
+                    <option value="admin" <?= ($userItem['role'] === 'admin') ? 'selected' : '' ?>>admin</option>
+                    <option value="operator" <?= ($userItem['role'] === 'operator') ? 'selected' : '' ?>>operator</option>
+                    <option value="readonly" <?= ($userItem['role'] === 'readonly') ? 'selected' : '' ?>>readonly</option>
+                  </select>
+                  <button class="btn secondary" type="submit">更新角色</button>
+                </form>
+              </td>
               <td>
                 <form action="/users/delete" method="post" onsubmit="return confirm('确认删除该用户？');">
                   <?= csrf_field() ?>
@@ -224,8 +235,8 @@
             <td>
               <div><?= e((string) ($vm['vnc_display'] ?: '-')) ?></div>
               <div class="muted">代理状态：<?= !empty($noVncStatus[$vm['name']]['running']) ? '运行中' : '未运行' ?></div>
-              <?php if (!empty($novncBaseUrl) && !empty($vm['vnc_display'])): ?>
-                <a class="btn secondary" target="_blank" href="<?= e(rtrim($novncBaseUrl, '/') . config('novnc.path') . '?autoconnect=true&path=' . rawurlencode((string) $vm['vnc_display'])) ?>">打开 noVNC</a>
+              <?php if (!empty($vm['vnc_display']) && auth_can_write()): ?>
+                <a class="btn secondary" target="_blank" href="/novnc/open?id=<?= (int) $vm['id'] ?>">打开 noVNC</a>
               <?php endif; ?>
               <?php if (auth_can_write()): ?>
                 <div class="actions">

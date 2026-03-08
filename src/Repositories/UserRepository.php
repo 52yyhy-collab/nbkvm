@@ -35,6 +35,11 @@ class UserRepository
         $stmt = $this->db()->prepare('UPDATE users SET password_hash = :password_hash WHERE id = :id');
         $stmt->execute(['password_hash' => $hash, 'id' => $id]);
     }
+    public function updateRole(int $id, string $role): void
+    {
+        $stmt = $this->db()->prepare('UPDATE users SET role = :role WHERE id = :id');
+        $stmt->execute(['role' => $role, 'id' => $id]);
+    }
     public function delete(int $id): void
     {
         $stmt = $this->db()->prepare('DELETE FROM users WHERE id = :id');

@@ -12,8 +12,8 @@
       </tbody>
     </table>
   </div>
-  <?php if (!empty($novncBaseUrl) && !empty($vm['vnc_display'])): ?>
-    <a class="btn secondary" target="_blank" href="<?= e(rtrim($novncBaseUrl, '/') . config('novnc.path') . '?autoconnect=true&path=' . rawurlencode((string) $vm['vnc_display'])) ?>">打开 noVNC</a>
+  <?php if (!empty($vm['vnc_display']) && auth_can_write()): ?>
+    <a class="btn secondary" target="_blank" href="/novnc/open?id=<?= (int) $vm['id'] ?>">打开 noVNC</a>
   <?php endif; ?>
 </section>
 <section class="card span-12">

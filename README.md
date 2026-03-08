@@ -14,7 +14,8 @@ NBKVM 是一个基于 PHP 的 KVM / libvirt 控制系统，项目名为 **nbkvm*
 - 环境自检
 - 审计日志
 - SQLite / MySQL 双后端配置支持
-- noVNC 链接入口与本地代理脚本
+- noVNC 链接入口、本地代理脚本与控制入口
+- 部署脚本与部署文档
 ## 技术选型
 - PHP 8.3+
 - php-libvirt 扩展
@@ -148,5 +149,8 @@ http://你的主机IP:6080/vnc.html
 - 任务队列
 - 更细的审计日志
 - 模板市场 / 批量部署
+## 部署
+- 快速部署脚本：`bin/deploy_local.sh`
+- 详细说明：`DEPLOY.md`
 ## 许可证
 MIT

@@ -26,6 +26,13 @@ class UserService
             'created_at' => date('c'),
         ]);
     }
+    public function updateRole(int $id, string $role): void
+    {
+        if (!in_array($role, ['admin', 'operator', 'readonly'], true)) {
+            throw new RuntimeException('不支持的角色。');
+        }
+        (new UserRepository())->updateRole($id, $role);
+    }
     public function delete(int $id): void
     {
         $user = auth_user();

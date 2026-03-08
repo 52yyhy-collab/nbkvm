@@ -8,6 +8,10 @@ class Request
     {
         return strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
     }
+    public function host(): string
+    {
+        return (string) ($_SERVER['HTTP_HOST'] ?? '127.0.0.1');
+    }
     public function path(): string
     {
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
