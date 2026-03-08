@@ -10,6 +10,7 @@ class TemplateController extends BaseController
     public function store(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new TemplateService())->create($request->all());
             (new \Nbkvm\Services\AuditService())->log('创建模板', 'template', (string) $request->input('name'));

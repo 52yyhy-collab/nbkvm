@@ -11,6 +11,7 @@ class VmController extends BaseController
     public function store(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new VmService())->createFromTemplate($request->all());
             (new AuditService())->log('创建虚拟机', 'vm', (string) $request->input('name'));
@@ -22,6 +23,7 @@ class VmController extends BaseController
     public function start(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new VmService())->start((int) $request->input('id'));
             (new AuditService())->log('启动虚拟机', 'vm', (string) $request->input('id'));
@@ -33,6 +35,7 @@ class VmController extends BaseController
     public function shutdown(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new VmService())->shutdown((int) $request->input('id'));
             (new AuditService())->log('关闭虚拟机', 'vm', (string) $request->input('id'));
@@ -44,6 +47,7 @@ class VmController extends BaseController
     public function destroy(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new VmService())->destroy((int) $request->input('id'));
             (new AuditService())->log('强制停止虚拟机', 'vm', (string) $request->input('id'));
@@ -55,6 +59,7 @@ class VmController extends BaseController
     public function delete(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new VmService())->delete((int) $request->input('id'), $request->input('remove_storage') === '1');
             (new AuditService())->log('删除虚拟机', 'vm', (string) $request->input('id'));

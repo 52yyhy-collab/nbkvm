@@ -11,6 +11,7 @@ class SnapshotController extends BaseController
     public function store(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new SnapshotService())->create((int) $request->input('vm_id'), (string) $request->input('name'));
             (new AuditService())->log('创建快照', 'snapshot', (string) $request->input('name'));
@@ -22,6 +23,7 @@ class SnapshotController extends BaseController
     public function revert(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new SnapshotService())->revert((string) $request->input('vm_name'), (string) $request->input('snapshot_name'));
             (new AuditService())->log('回滚快照', 'snapshot', (string) $request->input('snapshot_name'));
@@ -33,6 +35,7 @@ class SnapshotController extends BaseController
     public function delete(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new SnapshotService())->delete((string) $request->input('vm_name'), (string) $request->input('snapshot_name'));
             (new AuditService())->log('删除快照', 'snapshot', (string) $request->input('snapshot_name'));

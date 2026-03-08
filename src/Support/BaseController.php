@@ -19,4 +19,16 @@ abstract class BaseController
             $this->back('CSRF 校验失败。', 'error', $redirectTo);
         }
     }
+    protected function requireAdmin(string $redirectTo = '/'): void
+    {
+        if (!auth_is_admin()) {
+            $this->back('需要管理员权限。', 'error', $redirectTo);
+        }
+    }
+    protected function requireWrite(string $redirectTo = '/'): void
+    {
+        if (!auth_can_write()) {
+            $this->back('当前账户没有写入权限。', 'error', $redirectTo);
+        }
+    }
 }

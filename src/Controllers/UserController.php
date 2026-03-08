@@ -11,6 +11,7 @@ class UserController extends BaseController
     public function store(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireAdmin();
         try {
             (new UserService())->create((string) $request->input('username'), (string) $request->input('password'), (string) $request->input('role', 'admin'));
             (new AuditService())->log('创建用户', 'user', (string) $request->input('username'));
@@ -22,6 +23,7 @@ class UserController extends BaseController
     public function delete(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireAdmin();
         try {
             (new UserService())->delete((int) $request->input('id'));
             (new AuditService())->log('删除用户', 'user', (string) $request->input('id'));

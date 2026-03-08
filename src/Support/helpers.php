@@ -119,3 +119,16 @@ function auth_logout(): void
     ensure_session();
     unset($_SESSION['auth_user']);
 }
+function auth_role(): string
+{
+    $user = auth_user();
+    return (string) ($user['role'] ?? 'guest');
+}
+function auth_is_admin(): bool
+{
+    return auth_role() === 'admin';
+}
+function auth_can_write(): bool
+{
+    return in_array(auth_role(), ['admin', 'operator'], true);
+}

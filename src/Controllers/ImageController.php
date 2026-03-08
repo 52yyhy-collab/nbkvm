@@ -10,6 +10,7 @@ class ImageController extends BaseController
     public function store(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
         try {
             (new ImageService())->upload($request->file('image') ?? []);
             (new \Nbkvm\Services\AuditService())->log('上传镜像', 'image', (string) (($request->file('image') ?? [])['name'] ?? 'unknown'));
