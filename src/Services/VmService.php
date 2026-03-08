@@ -33,12 +33,14 @@ class VmService
         $networkName = trim((string) ($data['network_name'] ?? $template['network_name']));
         $vmDir = rtrim(config('vm_path'), '/') . '/' . $name;
         if (!is_dir($vmDir)) {
-            mkdir($vmDir, 0775, true);
+            mkdir($vmDir, 493, true);
         }
         $diskPath = $vmDir . '/' . $name . '.qcow2';
         $xmlPath = $vmDir . '/' . $name . '.xml';
         $libvirt = new LibvirtService();
         $libvirt->createDiskFromImage($image['path'], $diskPath, $diskSizeGb, $image['extension']);
+        @chmod($vmDir, 493);
+        @chmod($diskPath, 420);
         $vm = [
             'name' => $name,
             'template_id' => $templateId,

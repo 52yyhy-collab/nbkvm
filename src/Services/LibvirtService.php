@@ -40,39 +40,51 @@ class LibvirtService
             throw new RuntimeException('定义虚拟机失败：' . $this->lastError());
         }
     }
-    public function lookup(string $name)
+    private function lookupWithConnection(string $name): array
     {
         $connection = $this->connection(false);
         $domain = libvirt_domain_lookup_by_name($connection, $name);
         if ($domain === false) {
             throw new RuntimeException('查找虚拟机失败：' . $this->lastError());
         }
-        return $domain;
+        return [$connection, $domain];
     }
     public function start(string $name): void
     {
-        $domain = $this->lookup($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
+        if (!is_resource($connection) || !is_resource($domain)) {
+            throw new RuntimeException('启动虚拟机失败：libvirt 资源无效。');
+        }
         if (!libvirt_domain_create($domain)) {
             throw new RuntimeException('启动虚拟机失败：' . $this->lastError());
         }
     }
     public function shutdown(string $name): void
     {
-        $domain = $this->lookup($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
+        if (!is_resource($connection) || !is_resource($domain)) {
+            throw new RuntimeException('关机失败：libvirt 资源无效。');
+        }
         if (!libvirt_domain_shutdown($domain)) {
             throw new RuntimeException('关机失败：' . $this->lastError());
         }
     }
     public function destroy(string $name): void
     {
-        $domain = $this->lookup($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
+        if (!is_resource($connection) || !is_resource($domain)) {
+            throw new RuntimeException('强制停止失败：libvirt 资源无效。');
+        }
         if (!libvirt_domain_destroy($domain)) {
             throw new RuntimeException('强制停止失败：' . $this->lastError());
         }
     }
     public function undefine(string $name): void
     {
-        $domain = $this->lookup($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
+        if (!is_resource($connection) || !is_resource($domain)) {
+            throw new RuntimeException('取消定义失败：libvirt 资源无效。');
+        }
         if (!libvirt_domain_undefine($domain)) {
             throw new RuntimeException('取消定义失败：' . $this->lastError());
         }
@@ -80,7 +92,10 @@ class LibvirtService
     public function domInfo(string $name): array
     {
         try {
-            $domain = $this->lookup($name);
+            [$connection, $domain] = $this->lookupWithConnection($name);
+            if (!is_resource($connection) || !is_resource($domain)) {
+                return ['state' => 'unknown'];
+            }
             $info = libvirt_domain_get_info($domain);
             if ($info === false || !is_array($info)) {
                 return ['state' => 'unknown'];
