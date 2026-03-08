@@ -13,11 +13,11 @@ class NetworkController extends BaseController
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new NetworkService())->create($request->all());
-            (new AuditService())->log('创建网络', 'network', (string) $request->input('name'));
-            $this->back('网络创建成功。');
+            (new NetworkService())->saveWithPool($request->all());
+            (new AuditService())->log('保存网络配置', 'network', (string) $request->input('name'));
+            $this->back('网络配置保存成功。');
         } catch (\Throwable $e) {
-            $this->back('网络创建失败：' . $e->getMessage(), 'error');
+            $this->back('网络配置保存失败：' . $e->getMessage(), 'error');
         }
     }
     public function delete(Request $request): never
@@ -25,8 +25,13 @@ class NetworkController extends BaseController
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new NetworkService())->delete((string) $request->input('name'));
-            (new AuditService())->log('删除网络', 'network', (string) $request->input('name'));
+            $id = (int) $request->input('id');
+            if ($id > 0) {
+                (new NetworkService())->delete($id);
+            } else {
+                (new NetworkService())->delete((string) $request->input('name'));
+            }
+            (new AuditService())->log('删除网络', 'network', (string) ($id > 0 ? $id : $request->input('name')));
             $this->back('网络删除成功。');
         } catch (\Throwable $e) {
             $this->back('网络删除失败：' . $e->getMessage(), 'error');

@@ -1,11 +1,15 @@
 <?php
 
 declare(strict_types=1);
+
 namespace Nbkvm\Services;
+
 use Nbkvm\Repositories\ImageRepository;
+use Nbkvm\Repositories\SettingRepository;
 use Nbkvm\Repositories\TemplateRepository;
 use Nbkvm\Repositories\VmRepository;
 use RuntimeException;
+
 class VmService
 {
     public function createFromTemplate(array $data): int
@@ -14,90 +18,207 @@ class VmService
         if ($name === '' || !preg_match('/^[a-z0-9][a-z0-9-]{1,30}$/', $name)) {
             throw new RuntimeException('虚拟机名称不合法，只允许小写字母、数字和中划线，长度 2-31。');
         }
+
         $templateId = (int) ($data['template_id'] ?? 0);
         $template = (new TemplateRepository())->find($templateId);
         if (!$template) {
             throw new RuntimeException('模板不存在。');
         }
+
         $vmRepository = new VmRepository();
         if ($vmRepository->findByName($name)) {
             throw new RuntimeException('虚拟机名称已存在。');
         }
+
         $image = (new ImageRepository())->find((int) $template['image_id']);
         if (!$image) {
             throw new RuntimeException('模板关联镜像不存在。');
         }
-        $cpu = max(1, (int) ($data['cpu'] ?? $template['cpu']));
-        $memoryMb = max(256, (int) ($data['memory_mb'] ?? $template['memory_mb']));
-        $diskSizeGb = max(5, (int) ($data['disk_size_gb'] ?? $template['disk_size_gb']));
-        $networkName = trim((string) ($data['network_name'] ?? $template['network_name']));
-        $ipPoolId = (int) ($data['ip_pool_id'] ?? 0);
-        if ($ipPoolId > 0 && ((int) ($template['cloud_init_enabled'] ?? 0) !== 1 || ($image['extension'] ?? '') === 'iso')) {
-            throw new RuntimeException('IP 池自动下发仅支持启用 cloud-init 的非 ISO 模板。');
+
+        $cpu = max(1, (int) ($template['cpu'] ?? 1));
+        $memoryMb = max(256, (int) ($template['memory_mb'] ?? 2048));
+        $defaultDiskSizeGb = max(5, (int) ($template['disk_size_gb'] ?? 20));
+        $defaultDiskBus = trim((string) ($template['disk_bus'] ?? config('libvirt.default_disk_bus'))) ?: (string) config('libvirt.default_disk_bus');
+        $cloudInitEnabled = (int) ($template['cloud_init_enabled'] ?? 0) === 1;
+
+        if (($image['extension'] ?? '') === 'iso' && $cloudInitEnabled) {
+            throw new RuntimeException('ISO 模板不支持 cloud-init 自动注入。');
         }
+
+        $disks = json_decode((string) ($template['disks_json'] ?? '[]'), true);
+        if (!is_array($disks) || $disks === []) {
+            $disks = [[
+                'name' => 'disk0',
+                'size_gb' => $defaultDiskSizeGb,
+                'bus' => $defaultDiskBus,
+                'format' => 'qcow2',
+            ]];
+        }
+
+        $nicService = new NicConfigService();
+        $nics = $nicService->hydrateTemplateNics($template);
+        $nics = $nicService->normalizeVmOverride((string) ($data['vm_nics_json'] ?? ''), $nics);
+        if ($nicService->requiresCloudInitConfig($nics) && !$cloudInitEnabled) {
+            throw new RuntimeException('模板网卡包含静态地址或 IP 池，必须启用 cloud-init。');
+        }
+
         $vmDir = rtrim((string) config('vm_path'), '/') . '/' . $name;
         if (!is_dir($vmDir)) {
-            mkdir($vmDir, 493, true);
+            mkdir($vmDir, 0755, true);
         }
-        $diskPath = $vmDir . '/' . $name . '.qcow2';
         $xmlPath = $vmDir . '/' . $name . '.xml';
         $cloudInitIsoPath = null;
+        $diskEntries = [];
+        $nicConfigs = [];
+        $vmId = null;
+
         $libvirt = new LibvirtService();
-        $libvirt->createDiskFromImage($image['path'], $diskPath, $diskSizeGb, $image['extension']);
-        @chmod($vmDir, 493);
-        @chmod($diskPath, 420);
-        $vm = [
-            'name' => $name,
-            'template_id' => $templateId,
-            'cpu' => $cpu,
-            'memory_mb' => $memoryMb,
-            'disk_path' => $diskPath,
-            'disk_size_gb' => $diskSizeGb,
-            'network_name' => $networkName,
-            'ip_pool_id' => $ipPoolId ?: null,
-            'status' => 'defined',
-            'ip_address' => null,
-            'xml_path' => $xmlPath,
-            'cloud_init_iso_path' => null,
-            'vnc_display' => null,
-            'created_at' => date('c'),
-        ];
-        $vmId = $vmRepository->create($vm);
-        $netConfig = null;
-        if ($ipPoolId > 0) {
-            $netConfig = (new IpPoolService())->allocate($ipPoolId, $vmId);
-            if ($netConfig) {
-                $vm['ip_address'] = $netConfig['ip_address'];
+        try {
+            foreach (array_values($disks) as $index => $disk) {
+                if (!is_array($disk)) {
+                    continue;
+                }
+                $diskName = trim((string) ($disk['name'] ?? ('disk' . $index))) ?: ('disk' . $index);
+                $sizeGb = max(1, (int) ($disk['size_gb'] ?? ($index === 0 ? $defaultDiskSizeGb : 10)));
+                $bus = trim((string) ($disk['bus'] ?? $defaultDiskBus)) ?: $defaultDiskBus;
+                $format = trim((string) ($disk['format'] ?? 'qcow2')) ?: 'qcow2';
+                $path = $vmDir . '/' . $diskName . '.qcow2';
+
+                if ($index === 0) {
+                    $libvirt->createDiskFromImage((string) $image['path'], $path, $sizeGb, (string) $image['extension']);
+                } else {
+                    $libvirt->createEmptyDisk($path, $sizeGb, $format);
+                }
+                @chmod($path, 0644);
+                $diskEntries[] = [
+                    'name' => $diskName,
+                    'path' => $path,
+                    'size_gb' => $sizeGb,
+                    'bus' => $bus,
+                    'format' => $format,
+                    'is_primary' => $index === 0,
+                ];
             }
+
+            if ($diskEntries === []) {
+                throw new RuntimeException('模板没有可用磁盘配置。');
+            }
+
+            $settings = new SettingRepository();
+            $primaryNetworkName = $nicService->primaryNetworkName($nics);
+            $primaryPoolId = $nicService->primaryPoolId($nics);
+            $vm = [
+                'name' => $name,
+                'template_id' => $templateId,
+                'cpu' => $cpu,
+                'memory_mb' => $memoryMb,
+                'disk_path' => $diskEntries[0]['path'],
+                'disk_size_gb' => (int) $diskEntries[0]['size_gb'],
+                'network_name' => $primaryNetworkName,
+                'ip_pool_id' => $primaryPoolId,
+                'status' => 'defined',
+                'ip_address' => null,
+                'xml_path' => $xmlPath,
+                'cloud_init_iso_path' => null,
+                'vnc_display' => null,
+                'expires_at' => ($data['expires_at'] ?? '') ?: null,
+                'expire_action' => 'pause',
+                'expire_grace_days' => (int) ($settings->get('expire_grace_days', '3') ?: 3),
+                'expired_at' => null,
+                'nics_json' => json_encode($nics, JSON_UNESCAPED_UNICODE),
+                'created_at' => date('c'),
+            ];
+            $vmId = $vmRepository->create($vm);
+
+            $ipPoolService = new IpPoolService();
+            foreach (array_values($nics) as $index => $nic) {
+                if (!is_array($nic)) {
+                    continue;
+                }
+                $nicConfig = $nic;
+                $nicConfig['interface_name'] = trim((string) ($nic['interface_name'] ?? ('eth' . $index))) ?: ('eth' . $index);
+
+                if ((string) ($nicConfig['ipv4_mode'] ?? 'dhcp') === 'pool') {
+                    $allocation = $ipPoolService->allocate((int) $nicConfig['ipv4_pool_id'], $vmId);
+                    if ($allocation !== null) {
+                        $nicConfig['ipv4_address'] = $allocation['ip_address'];
+                        $nicConfig['ipv4_prefix_length'] = $allocation['prefix_length'];
+                        $nicConfig['ipv4_gateway'] = $allocation['gateway'];
+                        $nicConfig['ipv4_dns_servers'] = $allocation['dns_servers'];
+                    }
+                }
+
+                if ((string) ($nicConfig['ipv6_mode'] ?? 'none') === 'pool') {
+                    $allocation = $ipPoolService->allocate((int) $nicConfig['ipv6_pool_id'], $vmId);
+                    if ($allocation !== null) {
+                        $nicConfig['ipv6_address'] = $allocation['ip_address'];
+                        $nicConfig['ipv6_prefix_length'] = $allocation['prefix_length'];
+                        $nicConfig['ipv6_gateway'] = $allocation['gateway'];
+                        $nicConfig['ipv6_dns_servers'] = $allocation['dns_servers'];
+                    }
+                }
+
+                $nicConfigs[] = $nicConfig;
+            }
+
+            $vm['ip_address'] = $nicService->firstKnownAddress($nicConfigs);
+            if ($cloudInitEnabled) {
+                $cloudInitIsoPath = (new CloudInitService())->createSeedIso(
+                    $name,
+                    (string) ($template['cloud_init_user'] ?: 'ubuntu'),
+                    $template['cloud_init_password'] ?: null,
+                    $template['cloud_init_ssh_key'] ?: null,
+                    $nicConfigs
+                );
+                $vm['cloud_init_iso_path'] = $cloudInitIsoPath;
+            }
+
+            $vm['disks'] = $diskEntries;
+            $vm['nics'] = $nicConfigs;
+            $xml = (new DomainXmlBuilder())->build($vm, $template, $image);
+            file_put_contents($xmlPath, $xml);
+            @chmod($xmlPath, 0644);
+            $libvirt->define($xml);
+
+            $vmRepository->updateProvisioningData($vmId, $cloudInitIsoPath, $vm['ip_address'], $nicConfigs);
+            $vmRepository->updateStatus($vmId, 'defined', $vm['ip_address'], null);
+
+            $autostart = ($data['autostart'] ?? '') === '1' || (int) ($template['autostart_default'] ?? 0) === 1;
+            if ($autostart) {
+                $libvirt->start($name);
+                $info = $libvirt->domInfo($name);
+                $vmRepository->updateStatus(
+                    $vmId,
+                    $libvirt->stateLabel($info['state'] ?? 1),
+                    $libvirt->domIp($name) ?: $vm['ip_address'],
+                    $libvirt->vncDisplay($name)
+                );
+            }
+
+            return $vmId;
+        } catch (\Throwable $e) {
+            if ($vmId !== null) {
+                try {
+                    (new IpPoolService())->releaseByVmId($vmId);
+                } catch (\Throwable) {
+                }
+                try {
+                    $vmRepository->delete($vmId);
+                } catch (\Throwable) {
+                }
+            }
+            try {
+                (new CleanupService())->removeVmFiles([
+                    'disk_path' => $diskEntries[0]['path'] ?? null,
+                    'xml_path' => $xmlPath,
+                    'cloud_init_iso_path' => $cloudInitIsoPath,
+                ]);
+            } catch (\Throwable) {
+            }
+            throw $e;
         }
-        if ((int) ($template['cloud_init_enabled'] ?? 0) === 1 && ($image['extension'] ?? '') !== 'iso') {
-            $cloudInitIsoPath = (new CloudInitService())->createSeedIso(
-                $name,
-                (string) ($template['cloud_init_user'] ?: 'ubuntu'),
-                $template['cloud_init_password'] ?: null,
-                $template['cloud_init_ssh_key'] ?: null,
-                $netConfig
-            );
-            $vm['cloud_init_iso_path'] = $cloudInitIsoPath;
-        }
-        $xml = (new DomainXmlBuilder())->build($vm, $template, $image);
-        file_put_contents($xmlPath, $xml);
-        @chmod($xmlPath, 420);
-        $libvirt->define($xml);
-        $vmRepository->updateStatus($vmId, 'defined', $vm['ip_address'], null);
-        if ($cloudInitIsoPath !== null) {
-            $db = new \Nbkvm\Support\Database();
-            $pdo = $db->pdo();
-            $stmt = $pdo->prepare('UPDATE vms SET cloud_init_iso_path = :cloud_init_iso_path, ip_address = :ip_address WHERE id = :id');
-            $stmt->execute(['cloud_init_iso_path' => $cloudInitIsoPath, 'ip_address' => $vm['ip_address'], 'id' => $vmId]);
-        }
-        if (($data['autostart'] ?? '') === '1') {
-            $libvirt->start($name);
-            $info = $libvirt->domInfo($name);
-            $vmRepository->updateStatus($vmId, $libvirt->stateLabel($info['state'] ?? 1), $libvirt->domIp($name) ?: $vm['ip_address'], $libvirt->vncDisplay($name));
-        }
-        return $vmId;
     }
+
     public function refreshStates(): void
     {
         $libvirt = new LibvirtService();
@@ -107,6 +228,7 @@ class VmService
             $repo->updateStatus((int) $vm['id'], $libvirt->stateLabel($info['state'] ?? null), $libvirt->domIp($vm['name']) ?: ($vm['ip_address'] ?? null), $libvirt->vncDisplay($vm['name']));
         }
     }
+
     public function start(int $id): void
     {
         $vm = (new VmRepository())->find($id);
@@ -117,6 +239,7 @@ class VmService
         $libvirt->start($vm['name']);
         (new VmRepository())->updateStatus($id, 'running', $libvirt->domIp($vm['name']) ?: ($vm['ip_address'] ?? null), $libvirt->vncDisplay($vm['name']));
     }
+
     public function shutdown(int $id): void
     {
         $vm = (new VmRepository())->find($id);
@@ -126,6 +249,7 @@ class VmService
         (new LibvirtService())->shutdown($vm['name']);
         (new VmRepository())->updateStatus($id, 'shutting down', $vm['ip_address'] ?? null, $vm['vnc_display'] ?? null);
     }
+
     public function destroy(int $id): void
     {
         $vm = (new VmRepository())->find($id);
@@ -135,6 +259,7 @@ class VmService
         (new LibvirtService())->destroy($vm['name']);
         (new VmRepository())->updateStatus($id, 'shut off', $vm['ip_address'] ?? null, $vm['vnc_display'] ?? null);
     }
+
     public function delete(int $id, bool $removeStorage = false): void
     {
         $vm = (new VmRepository())->find($id);

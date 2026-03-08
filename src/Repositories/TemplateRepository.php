@@ -26,7 +26,7 @@ class TemplateRepository
     public function create(array $data): int
     {
         $db = $this->db();
-        $stmt = $db->prepare('INSERT INTO templates (name, image_id, image_type, os_variant, cpu, memory_mb, disk_size_gb, disk_bus, network_name, notes, cloud_init_enabled, cloud_init_user, cloud_init_password, cloud_init_ssh_key, created_at) VALUES (:name, :image_id, :image_type, :os_variant, :cpu, :memory_mb, :disk_size_gb, :disk_bus, :network_name, :notes, :cloud_init_enabled, :cloud_init_user, :cloud_init_password, :cloud_init_ssh_key, :created_at)');
+        $stmt = $db->prepare('INSERT INTO templates (name, image_id, image_type, os_variant, cpu, memory_mb, disk_size_gb, disk_bus, network_name, notes, cloud_init_enabled, cloud_init_user, cloud_init_password, cloud_init_ssh_key, virtualization_mode, cpu_sockets, cpu_cores, cpu_threads, machine_type, firmware_type, gpu_type, autostart_default, memory_max_mb, memory_overcommit_percent, disk_overcommit_enabled, disks_json, nics_json, created_at) VALUES (:name, :image_id, :image_type, :os_variant, :cpu, :memory_mb, :disk_size_gb, :disk_bus, :network_name, :notes, :cloud_init_enabled, :cloud_init_user, :cloud_init_password, :cloud_init_ssh_key, :virtualization_mode, :cpu_sockets, :cpu_cores, :cpu_threads, :machine_type, :firmware_type, :gpu_type, :autostart_default, :memory_max_mb, :memory_overcommit_percent, :disk_overcommit_enabled, :disks_json, :nics_json, :created_at)');
         $stmt->execute($data);
         return (int) $db->lastInsertId();
     }

@@ -9,7 +9,7 @@ return [
     'base_path' => $basePath,
     'database' => [
         'driver' => $dbDriver,
-        'sqlite_path' => $basePath . '/storage/database/nbkvm.sqlite',
+        'sqlite_path' => getenv('NBKVM_SQLITE_PATH') ?: ($basePath . '/storage/database/nbkvm.sqlite'),
         'mysql' => [
             'host' => getenv('NBKVM_DB_HOST') ?: '127.0.0.1',
             'port' => (int) (getenv('NBKVM_DB_PORT') ?: 3306),
@@ -43,6 +43,21 @@ return [
         'cloud_localds' => getenv('NBKVM_CLOUD_LOCALDS') ?: 'cloud-localds',
         'default_domain' => getenv('NBKVM_CLOUD_DOMAIN') ?: 'localdomain',
         'dns' => getenv('NBKVM_CLOUD_DNS') ?: '1.1.1.1,8.8.8.8',
+    ],
+    'virtualization' => [
+        'default_mode' => 'kvm',
+        'supported_modes' => ['kvm', 'qemu'],
+        'default_machine' => 'pc',
+        'supported_machines' => ['pc', 'q35'],
+        'default_firmware' => 'bios',
+        'supported_firmware' => ['bios', 'uefi'],
+        'default_gpu' => 'cirrus',
+        'supported_gpus' => ['cirrus', 'qxl', 'virtio', 'vga', 'none'],
+    ],
+    'defaults' => [
+        'expire_action' => getenv('NBKVM_DEFAULT_EXPIRE_ACTION') ?: 'pause',
+        'expire_grace_days' => (int) (getenv('NBKVM_EXPIRE_GRACE_DAYS') ?: 3),
+        'upload_max_size_mb' => (int) (getenv('NBKVM_UPLOAD_MAX_MB') ?: 51200),
     ],
     'libvirt' => [
         'uri' => 'qemu:///system',

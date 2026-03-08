@@ -1,40 +1,75 @@
 <?php
 
 declare(strict_types=1);
+
 namespace Nbkvm\Repositories;
+
 use Nbkvm\Support\Database;
 use PDO;
+
 class NetworkRepository
 {
     public function __construct(private readonly ?PDO $pdo = null)
     {
     }
+
     private function db(): PDO
     {
         return $this->pdo ?? (new Database())->pdo();
     }
+
     public function all(): array
     {
         return $this->db()->query('SELECT * FROM networks ORDER BY id DESC')->fetchAll();
     }
+
+    public function findById(int $id): ?array
+    {
+        $stmt = $this->db()->prepare('SELECT * FROM networks WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
     public function findByName(string $name): ?array
     {
         $stmt = $this->db()->prepare('SELECT * FROM networks WHERE name = :name LIMIT 1');
         $stmt->execute(['name' => $name]);
         return $stmt->fetch() ?: null;
     }
+
+    public function findByBridgeName(string $bridgeName): ?array
+    {
+        $stmt = $this->db()->prepare('SELECT * FROM networks WHERE bridge_name = :bridge_name ORDER BY id ASC LIMIT 1');
+        $stmt->execute(['bridge_name' => $bridgeName]);
+        return $stmt->fetch() ?: null;
+    }
+
     public function create(array $data): int
     {
         $db = $this->db();
-        $stmt = $db->prepare('INSERT INTO networks (name, cidr, gateway, bridge_name, dhcp_start, dhcp_end, libvirt_managed, autostart, created_at) VALUES (:name, :cidr, :gateway, :bridge_name, :dhcp_start, :dhcp_end, :libvirt_managed, :autostart, :created_at)');
+        $stmt = $db->prepare('INSERT INTO networks (name, cidr, gateway, bridge_name, dhcp_start, dhcp_end, ipv6_cidr, ipv6_gateway, libvirt_managed, autostart, created_at) VALUES (:name, :cidr, :gateway, :bridge_name, :dhcp_start, :dhcp_end, :ipv6_cidr, :ipv6_gateway, :libvirt_managed, :autostart, :created_at)');
         $stmt->execute($data);
         return (int) $db->lastInsertId();
     }
+
+    public function updateById(int $id, array $data): void
+    {
+        $stmt = $this->db()->prepare('UPDATE networks SET name = :name, cidr = :cidr, gateway = :gateway, bridge_name = :bridge_name, dhcp_start = :dhcp_start, dhcp_end = :dhcp_end, ipv6_cidr = :ipv6_cidr, ipv6_gateway = :ipv6_gateway, libvirt_managed = :libvirt_managed, autostart = :autostart WHERE id = :id');
+        $stmt->execute($data + ['id' => $id]);
+    }
+
     public function updateByName(string $name, array $data): void
     {
-        $stmt = $this->db()->prepare('UPDATE networks SET cidr=:cidr, gateway=:gateway, bridge_name=:bridge_name, dhcp_start=:dhcp_start, dhcp_end=:dhcp_end, libvirt_managed=:libvirt_managed, autostart=:autostart WHERE name=:name');
+        $stmt = $this->db()->prepare('UPDATE networks SET cidr = :cidr, gateway = :gateway, bridge_name = :bridge_name, dhcp_start = :dhcp_start, dhcp_end = :dhcp_end, ipv6_cidr = :ipv6_cidr, ipv6_gateway = :ipv6_gateway, libvirt_managed = :libvirt_managed, autostart = :autostart WHERE name = :name');
         $stmt->execute($data + ['name' => $name]);
     }
+
+    public function deleteById(int $id): void
+    {
+        $stmt = $this->db()->prepare('DELETE FROM networks WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+    }
+
     public function deleteByName(string $name): void
     {
         $stmt = $this->db()->prepare('DELETE FROM networks WHERE name = :name');
