@@ -18,6 +18,7 @@ $router = new Router();
 $router->get('/login', [AuthController::class, 'loginForm']);
 $router->post('/login', [AuthController::class, 'login']);
 $router->post('/logout', [AuthController::class, 'logout']);
+$router->post('/password', [AuthController::class, 'changePassword']);
 $router->get('/', [DashboardController::class, 'index']);
 $router->post('/images', [ImageController::class, 'store']);
 $router->post('/templates', [TemplateController::class, 'store']);

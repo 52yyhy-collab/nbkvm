@@ -30,4 +30,24 @@ class AuthController extends BaseController
         auth_logout();
         $this->back('已退出登录。', 'success', '/login');
     }
+    public function changePassword(Request $request): never
+    {
+        if (!verify_csrf((string) $request->input('_csrf'))) {
+            $this->back('CSRF 校验失败。', 'error', '/');
+        }
+        $user = auth_user();
+        if (!$user || empty($user['id'])) {
+            $this->back('未登录。', 'error', '/login');
+        }
+        $password = (string) $request->input('password');
+        $confirm = (string) $request->input('password_confirm');
+        if (strlen($password) < 8) {
+            $this->back('新密码至少需要 8 位。', 'error', '/');
+        }
+        if ($password !== $confirm) {
+            $this->back('两次输入的新密码不一致。', 'error', '/');
+        }
+        (new \Nbkvm\Repositories\UserRepository())->updatePassword((int) $user['id'], password_hash($password, PASSWORD_DEFAULT));
+        $this->back('密码修改成功。');
+    }
 }

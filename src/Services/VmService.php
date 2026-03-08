@@ -73,7 +73,7 @@ class VmService
         if (($data['autostart'] ?? '') === '1') {
             $libvirt->start($name);
             $info = $libvirt->domInfo($name);
-            $vmRepository->updateStatus($vmId, $libvirt->stateLabel($info['state'] ?? 1), null, $libvirt->vncDisplay($name));
+            $vmRepository->updateStatus($vmId, $libvirt->stateLabel($info['state'] ?? 1), $libvirt->domIp($name), $libvirt->vncDisplay($name));
         }
         return $vmId;
     }
@@ -83,7 +83,7 @@ class VmService
         $repo = new VmRepository();
         foreach ($repo->all() as $vm) {
             $info = $libvirt->domInfo($vm['name']);
-            $repo->updateStatus((int) $vm['id'], $libvirt->stateLabel($info['state'] ?? null), null, $libvirt->vncDisplay($vm['name']));
+            $repo->updateStatus((int) $vm['id'], $libvirt->stateLabel($info['state'] ?? null), $libvirt->domIp($vm['name']), $libvirt->vncDisplay($vm['name']));
         }
     }
     public function start(int $id): void
@@ -94,7 +94,7 @@ class VmService
         }
         $libvirt = new LibvirtService();
         $libvirt->start($vm['name']);
-        (new VmRepository())->updateStatus($id, 'running', null, $libvirt->vncDisplay($vm['name']));
+        (new VmRepository())->updateStatus($id, 'running', $libvirt->domIp($vm['name']), $libvirt->vncDisplay($vm['name']));
     }
     public function shutdown(int $id): void
     {

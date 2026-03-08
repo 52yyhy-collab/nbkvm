@@ -17,6 +17,18 @@
     </div>
   </section>
   <section class="card span-4">
+    <h2>修改密码</h2>
+    <form action="/password" method="post">
+      <?= csrf_field() ?>
+      <label>新密码</label>
+      <input type="password" name="password" required>
+      <label>确认新密码</label>
+      <input type="password" name="password_confirm" required>
+      <div class="spacer"></div>
+      <button class="btn secondary" type="submit">更新密码</button>
+    </form>
+  </section>
+  <section class="card span-4">
     <h2>上传镜像</h2>
     <form action="/images" method="post" enctype="multipart/form-data">
       <?= csrf_field() ?>

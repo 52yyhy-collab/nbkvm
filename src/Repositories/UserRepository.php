@@ -19,4 +19,9 @@ class UserRepository
         $stmt->execute(['username' => $username]);
         return $stmt->fetch() ?: null;
     }
+    public function updatePassword(int $id, string $hash): void
+    {
+        $stmt = $this->db()->prepare('UPDATE users SET password_hash = :password_hash WHERE id = :id');
+        $stmt->execute(['password_hash' => $hash, 'id' => $id]);
+    }
 }

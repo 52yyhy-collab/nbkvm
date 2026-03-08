@@ -167,4 +167,16 @@ class LibvirtService
         }
         return trim($result->stdout);
     }
+    public function domIp(string $name): ?string
+    {
+        $result = $this->shell()->run([(string) config('libvirt.virsh'), '-c', (string) config('libvirt.uri'), 'domifaddr', $name, '--source', 'lease']);
+        if ($result->succeeded() && preg_match('/(\d+\.\d+\.\d+\.\d+)\/\d+/', $result->stdout, $m)) {
+            return $m[1];
+        }
+        $result = $this->shell()->run([(string) config('libvirt.virsh'), '-c', (string) config('libvirt.uri'), 'domifaddr', $name]);
+        if ($result->succeeded() && preg_match('/(\d+\.\d+\.\d+\.\d+)\/\d+/', $result->stdout, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
 }
