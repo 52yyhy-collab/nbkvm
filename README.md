@@ -128,6 +128,11 @@ sudo mkdir -p /var/libvirt/images/nbkvm/{uploads,templates,vms}
 sudo chown -R $(whoami):libvirt /var/libvirt/images/nbkvm
 sudo chmod -R 775 /var/libvirt/images/nbkvm
 ```
+## IP 池说明
+IP 池目前走 **A 路线**：
+- 只对 **启用 cloud-init 的非 ISO 模板** 自动下发静态 IP
+- 对普通 ISO 安装模板，不做“自动写进系统”的承诺
+- 这意味着 IP 池是“cloud image / cloud-init 模板优先”的能力
 ## 删除与清理
 当删除虚拟机并勾选“同时删磁盘”时，会清理：
 - 系统磁盘

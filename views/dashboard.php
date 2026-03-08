@@ -93,6 +93,44 @@
     </form>
   </section>
   <section class="card span-4">
+    <h2>IP 池管理</h2>
+    <form action="/ip-pools" method="post">
+      <?= csrf_field() ?>
+      <label>IP 池名称</label>
+      <input type="text" name="name" required placeholder="lan-pool-1">
+      <label>绑定网络</label>
+      <input type="text" name="network_name" value="default" required>
+      <div class="row">
+        <div><label>网关</label><input type="text" name="gateway" value="192.168.122.1" required></div>
+        <div><label>前缀长度</label><input type="number" name="prefix_length" value="24" required></div>
+      </div>
+      <div class="row">
+        <div><label>起始 IP</label><input type="text" name="start_ip" value="192.168.122.100" required></div>
+        <div><label>结束 IP</label><input type="text" name="end_ip" value="192.168.122.150" required></div>
+      </div>
+      <label>DNS</label><input type="text" name="dns_servers" value="1.1.1.1,8.8.8.8">
+      <label>网卡名</label><input type="text" name="interface_name" value="eth0">
+      <div class="spacer"></div>
+      <button class="btn secondary" type="submit">创建 IP 池</button>
+    </form>
+    <div class="spacer"></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>名称</th><th>网络</th><th>范围</th></tr></thead>
+        <tbody>
+          <?php foreach ($ipPools as $pool): ?>
+            <tr>
+              <td><?= e((string) $pool['name']) ?></td>
+              <td><?= e((string) $pool['network_name']) ?></td>
+              <td><?= e((string) $pool['start_ip']) ?> - <?= e((string) $pool['end_ip']) ?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php if (!$ipPools): ?><tr><td colspan="3" class="muted">暂无 IP 池</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card span-4">
     <h2>创建模板</h2>
     <form action="/templates" method="post">
       <?= csrf_field() ?>
@@ -174,6 +212,14 @@
       </div>
       <label>网络</label>
       <input type="text" name="network_name" value="default">
+      <label>IP 池</label>
+      <select name="ip_pool_id">
+        <option value="">不指定</option>
+        <?php foreach ($ipPools as $pool): ?>
+          <option value="<?= (int) $pool['id'] ?>"><?= e((string) $pool['name']) ?> / <?= e((string) $pool['network_name']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <p class="muted">仅对启用 cloud-init 的非 ISO 模板自动下发静态 IP。</p>
       <label><input class="inline" type="checkbox" name="autostart" value="1"> 创建后立即启动</label>
       <div class="spacer"></div>
       <button class="btn success" type="submit">创建虚拟机</button>
