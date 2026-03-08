@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 namespace Nbkvm\Services;
+use Nbkvm\Repositories\IpPoolRepository;
 use Nbkvm\Repositories\NetworkRepository;
+use Nbkvm\Repositories\TemplateRepository;
+use Nbkvm\Repositories\VmRepository;
 use RuntimeException;
 class NetworkService
 {
@@ -43,6 +46,25 @@ class NetworkService
             'autostart' => 1,
             'created_at' => date('c'),
         ]);
+    }
+    public function delete(string $name): void
+    {
+        foreach ((new TemplateRepository())->all() as $template) {
+            if ((string) $template['network_name'] === $name) {
+                throw new RuntimeException('该网络仍被模板使用，不能删除。');
+            }
+        }
+        foreach ((new VmRepository())->all() as $vm) {
+            if ((string) $vm['network_name'] === $name) {
+                throw new RuntimeException('该网络仍被虚拟机使用，不能删除。');
+            }
+        }
+        foreach ((new IpPoolRepository())->all() as $pool) {
+            if ((string) $pool['network_name'] === $name) {
+                throw new RuntimeException('该网络仍被 IP 池使用，不能删除。');
+            }
+        }
+        (new NetworkRepository())->deleteByName($name);
     }
     public function assertPoolMatchesNetwork(string $networkName, string $gateway, int $prefix, string $startIp, string $endIp): void
     {

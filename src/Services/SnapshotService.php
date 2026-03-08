@@ -49,15 +49,19 @@ class SnapshotService
     }
     public function delete(string $vmName, string $snapshotName): void
     {
-        $cmd = sprintf('%s -c %s snapshot-delete --domain %s --snapshotname %s 2>&1',
-            escapeshellcmd((string) config('libvirt.virsh')),
-            escapeshellarg((string) config('libvirt.uri')),
-            escapeshellarg($vmName),
-            escapeshellarg($snapshotName)
-        );
-        exec($cmd, $output, $code);
-        if ($code !== 0) {
-            throw new RuntimeException('删除快照失败：' . implode("\n", $output));
+        $vm = (new VmRepository())->findByName($vmName);
+        if ($vm) {
+            $cmd = sprintf('%s -c %s snapshot-delete --domain %s --snapshotname %s 2>&1',
+                escapeshellcmd((string) config('libvirt.virsh')),
+                escapeshellarg((string) config('libvirt.uri')),
+                escapeshellarg($vmName),
+                escapeshellarg($snapshotName)
+            );
+            exec($cmd, $output, $code);
+            // best-effort: libvirt 里不存在也继续清理数据库
+            (new SnapshotRepository())->deleteByVmAndName((int) $vm['id'], $snapshotName);
+            return;
         }
+        (new SnapshotRepository())->deleteByName($snapshotName);
     }
 }

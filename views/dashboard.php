@@ -110,13 +110,20 @@
     <div class="spacer"></div>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>名称</th><th>CIDR</th><th>网关</th></tr></thead>
+        <thead><tr><th>名称</th><th>CIDR</th><th>网关</th><th>操作</th></tr></thead>
         <tbody>
           <?php foreach ($networks as $network): ?>
             <tr>
               <td><?= e((string) $network['name']) ?></td>
               <td><?= e((string) $network['cidr']) ?></td>
               <td><?= e((string) $network['gateway']) ?></td>
+              <td>
+                <form action="/networks/delete" method="post" onsubmit="return confirm('确认删除该网络？');">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="name" value="<?= e((string) $network['name']) ?>">
+                  <button class="btn danger" type="submit">删除</button>
+                </form>
+              </td>
             </tr>
           <?php endforeach; ?>
           <?php if (!$networks): ?><tr><td colspan="3" class="muted">暂无网络</td></tr><?php endif; ?>
@@ -148,13 +155,20 @@
     <div class="spacer"></div>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>名称</th><th>网络</th><th>范围</th></tr></thead>
+        <thead><tr><th>名称</th><th>网络</th><th>范围</th><th>操作</th></tr></thead>
         <tbody>
           <?php foreach ($ipPools as $pool): ?>
             <tr>
               <td><?= e((string) $pool['name']) ?></td>
               <td><?= e((string) $pool['network_name']) ?></td>
               <td><?= e((string) $pool['start_ip']) ?> - <?= e((string) $pool['end_ip']) ?></td>
+              <td>
+                <form action="/ip-pools/delete" method="post" onsubmit="return confirm('确认删除该 IP 池？');">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="id" value="<?= (int) $pool['id'] ?>">
+                  <button class="btn danger" type="submit">删除</button>
+                </form>
+              </td>
             </tr>
           <?php endforeach; ?>
           <?php if (!$ipPools): ?><tr><td colspan="3" class="muted">暂无 IP 池</td></tr><?php endif; ?>
@@ -276,16 +290,23 @@
             <td><code><?= e((string) $image['path']) ?></code></td>
             <td>
               <?php if (auth_can_write()): ?>
-                <form action="/images/convert" method="post">
-                  <?= csrf_field() ?>
-                  <input type="hidden" name="id" value="<?= (int) $image['id'] ?>">
-                  <select name="target_extension">
-                    <option value="qcow2">qcow2</option>
-                    <option value="raw">raw</option>
-                    <option value="img">img</option>
-                  </select>
-                  <button class="btn secondary" type="submit">转换</button>
-                </form>
+                <div class="actions">
+                  <form action="/images/convert" method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= (int) $image['id'] ?>">
+                    <select name="target_extension">
+                      <option value="qcow2">qcow2</option>
+                      <option value="raw">raw</option>
+                      <option value="img">img</option>
+                    </select>
+                    <button class="btn secondary" type="submit">转换</button>
+                  </form>
+                  <form action="/images/delete" method="post" onsubmit="return confirm('确认删除该镜像？');">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= (int) $image['id'] ?>">
+                    <button class="btn danger" type="submit">删除</button>
+                  </form>
+                </div>
               <?php else: ?>
                 <span class="muted">-</span>
               <?php endif; ?>
@@ -301,7 +322,7 @@
     <h2>模板列表</h2>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>ID</th><th>模板</th><th>镜像</th><th>规格</th><th>cloud-init</th></tr></thead>
+        <thead><tr><th>ID</th><th>模板</th><th>镜像</th><th>规格</th><th>cloud-init</th><th>操作</th></tr></thead>
         <tbody>
         <?php foreach ($templates as $template): ?>
           <tr>
@@ -310,6 +331,13 @@
             <td><?= e((string) ($template['image_name'] ?? 'unknown')) ?></td>
             <td><?= (int) $template['cpu'] ?> vCPU / <?= (int) $template['memory_mb'] ?> MB / <?= (int) $template['disk_size_gb'] ?> GB</td>
             <td><?= (int) ($template['cloud_init_enabled'] ?? 0) === 1 ? '启用' : '关闭' ?></td>
+            <td>
+              <form action="/templates/delete" method="post" onsubmit="return confirm('确认删除该模板？');">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= (int) $template['id'] ?>">
+                <button class="btn danger" type="submit">删除</button>
+              </form>
+            </td>
           </tr>
         <?php endforeach; ?>
         <?php if (!$templates): ?><tr><td colspan="5" class="muted">暂无模板</td></tr><?php endif; ?>

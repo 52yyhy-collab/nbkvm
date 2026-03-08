@@ -20,4 +20,16 @@ class IpPoolController extends BaseController
             $this->back('IP 池创建失败：' . $e->getMessage(), 'error');
         }
     }
+    public function delete(Request $request): never
+    {
+        $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
+        try {
+            (new IpPoolService())->delete((int) $request->input('id'));
+            (new AuditService())->log('删除 IP 池', 'ip_pool', (string) $request->input('id'));
+            $this->back('IP 池删除成功。');
+        } catch (\Throwable $e) {
+            $this->back('IP 池删除失败：' . $e->getMessage(), 'error');
+        }
+    }
 }

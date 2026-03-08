@@ -52,4 +52,9 @@ class IpAddressRepository
         $stmt = $this->db()->prepare("UPDATE ip_pool_addresses SET status='free', vm_id=NULL, updated_at=:updated_at WHERE vm_id=:vm_id");
         $stmt->execute(['updated_at' => date('c'), 'vm_id' => $vmId]);
     }
+    public function deleteByPool(int $poolId): void
+    {
+        $stmt = $this->db()->prepare('DELETE FROM ip_pool_addresses WHERE pool_id = :pool_id');
+        $stmt->execute(['pool_id' => $poolId]);
+    }
 }

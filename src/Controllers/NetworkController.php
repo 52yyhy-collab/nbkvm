@@ -20,4 +20,16 @@ class NetworkController extends BaseController
             $this->back('网络创建失败：' . $e->getMessage(), 'error');
         }
     }
+    public function delete(Request $request): never
+    {
+        $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
+        try {
+            (new NetworkService())->delete((string) $request->input('name'));
+            (new AuditService())->log('删除网络', 'network', (string) $request->input('name'));
+            $this->back('网络删除成功。');
+        } catch (\Throwable $e) {
+            $this->back('网络删除失败：' . $e->getMessage(), 'error');
+        }
+    }
 }

@@ -139,14 +139,17 @@ class VmService
     {
         $vm = (new VmRepository())->find($id);
         if (!$vm) {
-            throw new RuntimeException('虚拟机不存在。');
+            return;
         }
         $libvirt = new LibvirtService();
         try {
             $libvirt->destroy($vm['name']);
         } catch (\Throwable) {
         }
-        $libvirt->undefine($vm['name']);
+        try {
+            $libvirt->undefine($vm['name']);
+        } catch (\Throwable) {
+        }
         if ($removeStorage) {
             (new CleanupService())->removeVmFiles($vm);
         }

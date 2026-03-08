@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Nbkvm\Services;
 use Nbkvm\Repositories\ImageRepository;
 use Nbkvm\Repositories\TemplateRepository;
+use Nbkvm\Repositories\VmRepository;
 use RuntimeException;
 class TemplateService
 {
@@ -31,5 +32,14 @@ class TemplateService
             'cloud_init_ssh_key' => trim((string) ($data['cloud_init_ssh_key'] ?? '')) ?: null,
             'created_at' => date('c'),
         ]);
+    }
+    public function delete(int $id): void
+    {
+        foreach ((new VmRepository())->all() as $vm) {
+            if ((int) $vm['template_id'] === $id) {
+                throw new RuntimeException('该模板仍有虚拟机关联，不能删除。');
+            }
+        }
+        (new TemplateRepository())->delete($id);
     }
 }

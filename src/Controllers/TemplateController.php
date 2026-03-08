@@ -19,4 +19,16 @@ class TemplateController extends BaseController
             $this->back('模板创建失败：' . $e->getMessage(), 'error');
         }
     }
+    public function delete(Request $request): never
+    {
+        $this->requireCsrf((string) $request->input('_csrf'));
+        $this->requireWrite();
+        try {
+            (new TemplateService())->delete((int) $request->input('id'));
+            (new \Nbkvm\Services\AuditService())->log('删除模板', 'template', (string) $request->input('id'));
+            $this->back('模板删除成功。');
+        } catch (\Throwable $e) {
+            $this->back('模板删除失败：' . $e->getMessage(), 'error');
+        }
+    }
 }

@@ -30,4 +30,9 @@ class IpPoolRepository
         $stmt->execute($data);
         return (int) $db->lastInsertId();
     }
+    public function delete(int $id): void
+    {
+        $stmt = $this->db()->prepare('DELETE FROM ip_pools WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+    }
 }

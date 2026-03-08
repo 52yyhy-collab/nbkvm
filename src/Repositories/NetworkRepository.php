@@ -35,4 +35,9 @@ class NetworkRepository
         $stmt = $this->db()->prepare('UPDATE networks SET cidr=:cidr, gateway=:gateway, bridge_name=:bridge_name, dhcp_start=:dhcp_start, dhcp_end=:dhcp_end, libvirt_managed=:libvirt_managed, autostart=:autostart WHERE name=:name');
         $stmt->execute($data + ['name' => $name]);
     }
+    public function deleteByName(string $name): void
+    {
+        $stmt = $this->db()->prepare('DELETE FROM networks WHERE name = :name');
+        $stmt->execute(['name' => $name]);
+    }
 }

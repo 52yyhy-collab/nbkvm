@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Nbkvm\Services;
 use Nbkvm\Repositories\ImageRepository;
+use Nbkvm\Repositories\TemplateRepository;
 use RuntimeException;
 class ImageService
 {
@@ -22,7 +23,7 @@ class ImageService
         $tmp = (string) ($file['tmp_name'] ?? '');
         $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($originalName, PATHINFO_FILENAME));
         $name = $safeName . '_' . date('Ymd_His') . '.' . $extension;
-        $destination = rtrim(config('upload_path'), '/') . '/' . $name;
+        $destination = rtrim((string) config('upload_path'), '/') . '/' . $name;
         if (!is_dir(dirname($destination))) {
             mkdir(dirname($destination), 0775, true);
         }
@@ -40,5 +41,19 @@ class ImageService
             'size_bytes' => (int) ($file['size'] ?? filesize($destination)),
             'created_at' => date('c'),
         ]);
+    }
+    public function delete(int $id): void
+    {
+        foreach ((new TemplateRepository())->all() as $template) {
+            if ((int) $template['image_id'] === $id) {
+                throw new RuntimeException('该镜像仍被模板使用，不能删除。');
+            }
+        }
+        $image = (new ImageRepository())->find($id);
+        if (!$image) {
+            throw new RuntimeException('镜像不存在。');
+        }
+        @unlink((string) $image['path']);
+        (new ImageRepository())->delete($id);
     }
 }

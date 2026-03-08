@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Nbkvm\Services;
 use Nbkvm\Repositories\IpAddressRepository;
 use Nbkvm\Repositories\IpPoolRepository;
+use Nbkvm\Repositories\VmRepository;
 use RuntimeException;
 class IpPoolService
 {
@@ -51,6 +52,16 @@ class IpPoolService
             ]);
         }
         return $poolId;
+    }
+    public function delete(int $id): void
+    {
+        foreach ((new VmRepository())->all() as $vm) {
+            if ((int) ($vm['ip_pool_id'] ?? 0) === $id) {
+                throw new RuntimeException('该 IP 池仍被虚拟机使用，不能删除。');
+            }
+        }
+        (new IpAddressRepository())->deleteByPool($id);
+        (new IpPoolRepository())->delete($id);
     }
     public function allocate(int $poolId, int $vmId): ?array
     {
