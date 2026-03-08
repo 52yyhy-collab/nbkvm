@@ -239,11 +239,16 @@
             <td><?= number_format(((int) $image['size_bytes']) / 1024 / 1024, 2) ?> MB</td>
             <td><code><?= e((string) $image['path']) ?></code></td>
             <td>
-              <?php if (auth_can_write() && !in_array(strtolower((string) $image['extension']), ['iso','qcow2'], true)): ?>
-                <form action="/images/convert/qcow2" method="post">
+              <?php if (auth_can_write()): ?>
+                <form action="/images/convert" method="post">
                   <?= csrf_field() ?>
                   <input type="hidden" name="id" value="<?= (int) $image['id'] ?>">
-                  <button class="btn secondary" type="submit">转 qcow2</button>
+                  <select name="target_extension">
+                    <option value="qcow2">qcow2</option>
+                    <option value="raw">raw</option>
+                    <option value="img">img</option>
+                  </select>
+                  <button class="btn secondary" type="submit">转换</button>
                 </form>
               <?php else: ?>
                 <span class="muted">-</span>

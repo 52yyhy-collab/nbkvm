@@ -33,7 +33,7 @@ $router->post('/novnc/stop', [NoVncController::class, 'stop']);
 $router->get('/', [DashboardController::class, 'index']);
 $router->get('/vm', [VmDetailController::class, 'show']);
 $router->post('/images', [ImageController::class, 'store']);
-$router->post('/images/convert/qcow2', [ImageConvertController::class, 'qcow2']);
+$router->post('/images/convert', [ImageConvertController::class, 'convert']);
 $router->post('/ip-pools', [IpPoolController::class, 'store']);
 $router->post('/templates', [TemplateController::class, 'store']);
 $router->post('/vms', [VmController::class, 'store']);

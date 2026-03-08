@@ -8,14 +8,14 @@ use Nbkvm\Support\BaseController;
 use Nbkvm\Support\Request;
 class ImageConvertController extends BaseController
 {
-    public function qcow2(Request $request): never
+    public function convert(Request $request): never
     {
         $this->requireCsrf((string) $request->input('_csrf'));
         $this->requireWrite();
         try {
-            (new ImageConvertService())->convertToQcow2((int) $request->input('id'));
-            (new AuditService())->log('转换镜像为 qcow2', 'image', (string) $request->input('id'));
-            $this->back('镜像已转换为 qcow2。');
+            (new ImageConvertService())->convert((int) $request->input('id'), (string) $request->input('target_extension'));
+            (new AuditService())->log('转换镜像格式', 'image', (string) $request->input('id'));
+            $this->back('镜像转换成功。');
         } catch (\Throwable $e) {
             $this->back('镜像转换失败：' . $e->getMessage(), 'error');
         }
