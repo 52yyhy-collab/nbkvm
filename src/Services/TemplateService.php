@@ -25,6 +25,10 @@ class TemplateService
             'disk_bus' => trim((string) ($data['disk_bus'] ?? config('libvirt.default_disk_bus'))),
             'network_name' => trim((string) ($data['network_name'] ?? config('libvirt.default_network'))),
             'notes' => trim((string) ($data['notes'] ?? '')),
+            'cloud_init_enabled' => ($data['cloud_init_enabled'] ?? '') === '1' ? 1 : 0,
+            'cloud_init_user' => trim((string) ($data['cloud_init_user'] ?? 'ubuntu')),
+            'cloud_init_password' => trim((string) ($data['cloud_init_password'] ?? '')) ?: null,
+            'cloud_init_ssh_key' => trim((string) ($data['cloud_init_ssh_key'] ?? '')) ?: null,
             'created_at' => date('c'),
         ]);
     }

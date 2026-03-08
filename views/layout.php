@@ -14,7 +14,15 @@
       <p>基于 PHP + libvirt 扩展的 KVM 控制面板</p>
     </div>
     <div class="muted">
-      libvirt URI: <code><?= e((string) config('libvirt.uri')) ?></code>
+      <?php if (auth_check()): ?>
+        当前用户：<code><?= e((string) (auth_user()['username'] ?? 'unknown')) ?></code>
+        <form class="inline" action="/logout" method="post" style="display:inline-block;margin-left:12px;">
+          <?= csrf_field() ?>
+          <button class="btn secondary" type="submit">退出</button>
+        </form>
+      <?php else: ?>
+        未登录
+      <?php endif; ?>
     </div>
   </div>
   <?php if (!empty($flash['success'])): ?>

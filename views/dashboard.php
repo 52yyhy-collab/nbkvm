@@ -1,13 +1,25 @@
 <div class="grid">
-  <?php if (empty($libvirtAvailable)): ?>
-    <section class="card span-12">
-      <h2>环境提醒</h2>
-      <div class="flash error">当前环境未检测到 <code>php-libvirt</code> 扩展。项目代码已按扩展方式实现，但你需要在目标机器安装并启用该扩展后才能真正控制 libvirt。</div>
-    </section>
-  <?php endif; ?>
+  <section class="card span-12">
+    <h2>环境自检</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>项目</th><th>状态</th><th>详情</th></tr></thead>
+        <tbody>
+          <?php foreach ($envChecks as $check): ?>
+            <tr>
+              <td><?= e((string) $check['name']) ?></td>
+              <td><span class="badge <?= !empty($check['ok']) ? 'running' : 'shut' ?>"><?= !empty($check['ok']) ? '正常' : '待处理' ?></span></td>
+              <td><?= e((string) $check['value']) ?></td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
   <section class="card span-4">
     <h2>上传镜像</h2>
     <form action="/images" method="post" enctype="multipart/form-data">
+      <?= csrf_field() ?>
       <label for="image">镜像文件</label>
       <input id="image" type="file" name="image" required>
       <p class="muted">支持：ISO / QCOW2 / RAW / IMG</p>
@@ -17,13 +29,14 @@
   <section class="card span-4">
     <h2>创建模板</h2>
     <form action="/templates" method="post">
+      <?= csrf_field() ?>
       <label>模板名称</label>
       <input type="text" name="name" required placeholder="ubuntu-24-cloud">
       <label>基础镜像</label>
       <select name="image_id" required>
         <option value="">请选择镜像</option>
         <?php foreach ($images as $image): ?>
-          <option value="<?= (int) $image['id'] ?>"><?= e($image['name']) ?> (<?= e($image['extension']) ?>)</option>
+          <option value="<?= (int) $image['id'] ?>"><?= e((string) $image['name']) ?> (<?= e((string) $image['extension']) ?>)</option>
         <?php endforeach; ?>
       </select>
       <div class="row">
@@ -56,19 +69,27 @@
       <input type="text" name="os_variant" value="generic" required>
       <label>备注</label>
       <textarea name="notes" placeholder="比如：cloud image / 安装 ISO / 内网模板"></textarea>
+      <label><input class="inline" type="checkbox" name="cloud_init_enabled" value="1"> 启用 cloud-init</label>
+      <label>cloud-init 用户</label>
+      <input type="text" name="cloud_init_user" value="ubuntu">
+      <label>cloud-init 密码</label>
+      <input type="text" name="cloud_init_password" placeholder="可选">
+      <label>SSH 公钥</label>
+      <textarea name="cloud_init_ssh_key" placeholder="ssh-ed25519 ..."></textarea>
       <button class="btn" type="submit">创建模板</button>
     </form>
   </section>
   <section class="card span-4">
     <h2>创建虚拟机</h2>
     <form action="/vms" method="post">
+      <?= csrf_field() ?>
       <label>虚拟机名称</label>
       <input type="text" name="name" required placeholder="vm-demo-01">
       <label>模板</label>
       <select name="template_id" required>
         <option value="">请选择模板</option>
         <?php foreach ($templates as $template): ?>
-          <option value="<?= (int) $template['id'] ?>"><?= e($template['name']) ?> / <?= e($template['image_name'] ?? 'unknown') ?></option>
+          <option value="<?= (int) $template['id'] ?>"><?= e((string) $template['name']) ?> / <?= e((string) ($template['image_name'] ?? 'unknown')) ?></option>
         <?php endforeach; ?>
       </select>
       <div class="row-3">
@@ -101,10 +122,10 @@
         <?php foreach ($images as $image): ?>
           <tr>
             <td><?= (int) $image['id'] ?></td>
-            <td><?= e($image['name']) ?></td>
-            <td><?= e($image['extension']) ?></td>
+            <td><?= e((string) $image['name']) ?></td>
+            <td><?= e((string) $image['extension']) ?></td>
             <td><?= number_format(((int) $image['size_bytes']) / 1024 / 1024, 2) ?> MB</td>
-            <td><code><?= e($image['path']) ?></code></td>
+            <td><code><?= e((string) $image['path']) ?></code></td>
           </tr>
         <?php endforeach; ?>
         <?php if (!$images): ?><tr><td colspan="5" class="muted">暂无镜像</td></tr><?php endif; ?>
@@ -116,15 +137,15 @@
     <h2>模板列表</h2>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>ID</th><th>模板</th><th>镜像</th><th>规格</th><th>网络</th></tr></thead>
+        <thead><tr><th>ID</th><th>模板</th><th>镜像</th><th>规格</th><th>cloud-init</th></tr></thead>
         <tbody>
         <?php foreach ($templates as $template): ?>
           <tr>
             <td><?= (int) $template['id'] ?></td>
-            <td><?= e($template['name']) ?></td>
-            <td><?= e($template['image_name'] ?? 'unknown') ?></td>
+            <td><?= e((string) $template['name']) ?></td>
+            <td><?= e((string) ($template['image_name'] ?? 'unknown')) ?></td>
             <td><?= (int) $template['cpu'] ?> vCPU / <?= (int) $template['memory_mb'] ?> MB / <?= (int) $template['disk_size_gb'] ?> GB</td>
-            <td><?= e($template['network_name']) ?></td>
+            <td><?= (int) ($template['cloud_init_enabled'] ?? 0) === 1 ? '启用' : '关闭' ?></td>
           </tr>
         <?php endforeach; ?>
         <?php if (!$templates): ?><tr><td colspan="5" class="muted">暂无模板</td></tr><?php endif; ?>
@@ -136,22 +157,29 @@
     <h2>虚拟机列表</h2>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>名称</th><th>模板</th><th>状态</th><th>规格</th><th>磁盘</th><th>操作</th></tr></thead>
+        <thead><tr><th>名称</th><th>模板</th><th>状态</th><th>规格</th><th>VNC/noVNC</th><th>操作</th></tr></thead>
         <tbody>
         <?php foreach ($vms as $vm): ?>
           <?php $status = strtolower((string) ($vm['status'] ?? 'unknown')); ?>
           <tr>
-            <td><strong><?= e($vm['name']) ?></strong><br><span class="muted">IP: <?= e((string) ($vm['ip_address'] ?: '-')) ?></span></td>
-            <td><?= e($vm['template_name'] ?? 'unknown') ?></td>
+            <td><strong><?= e((string) $vm['name']) ?></strong><br><span class="muted">IP: <?= e((string) ($vm['ip_address'] ?: '-')) ?></span></td>
+            <td><?= e((string) ($vm['template_name'] ?? 'unknown')) ?></td>
             <td><span class="badge <?= str_contains($status, 'running') ? 'running' : (str_contains($status, 'shut') ? 'shut' : 'unknown') ?>"><?= e($status) ?></span></td>
             <td><?= (int) $vm['cpu'] ?> vCPU / <?= (int) $vm['memory_mb'] ?> MB / <?= (int) $vm['disk_size_gb'] ?> GB</td>
-            <td><code><?= e($vm['disk_path']) ?></code></td>
+            <td>
+              <div><?= e((string) ($vm['vnc_display'] ?: '-')) ?></div>
+              <?php if (!empty($novncBaseUrl) && !empty($vm['vnc_display'])): ?>
+                <a class="btn secondary" target="_blank" href="<?= e(rtrim($novncBaseUrl, '/') . config('novnc.path') . '?autoconnect=true&path=' . rawurlencode((string) $vm['vnc_display'])) ?>">打开 noVNC</a>
+              <?php endif; ?>
+            </td>
             <td>
               <div class="actions">
-                <form action="/vms/start" method="post"><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn success" type="submit">启动</button></form>
-                <form action="/vms/shutdown" method="post"><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn warn" type="submit">关机</button></form>
-                <form action="/vms/destroy" method="post"><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn danger" type="submit">强停</button></form>
+                <form action="/vms/start" method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn success" type="submit">启动</button></form>
+                <form action="/vms/shutdown" method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn warn" type="submit">关机</button></form>
+                <form action="/vms/destroy" method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn danger" type="submit">强停</button></form>
+                <form action="/snapshots" method="post"><?= csrf_field() ?><input type="hidden" name="vm_id" value="<?= (int) $vm['id'] ?>"><input type="text" name="name" placeholder="snapshot-1" style="width:140px"><button class="btn secondary" type="submit">快照</button></form>
                 <form action="/vms/delete" method="post" onsubmit="return confirm('确认删除虚拟机定义？');">
+                  <?= csrf_field() ?>
                   <input type="hidden" name="id" value="<?= (int) $vm['id'] ?>">
                   <label class="muted"><input type="checkbox" name="remove_storage" value="1"> 同时删磁盘</label>
                   <button class="btn secondary" type="submit">删除</button>
@@ -161,6 +189,45 @@
           </tr>
         <?php endforeach; ?>
         <?php if (!$vms): ?><tr><td colspan="6" class="muted">暂无虚拟机</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card span-6">
+    <h2>快照记录</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>ID</th><th>虚拟机</th><th>快照名</th><th>状态</th><th>时间</th></tr></thead>
+        <tbody>
+          <?php foreach ($snapshots as $snapshot): ?>
+            <tr>
+              <td><?= (int) $snapshot['id'] ?></td>
+              <td><?= e((string) ($snapshot['vm_name'] ?? '-')) ?></td>
+              <td><?= e((string) $snapshot['name']) ?></td>
+              <td><?= e((string) $snapshot['status']) ?></td>
+              <td><?= e((string) $snapshot['created_at']) ?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php if (!$snapshots): ?><tr><td colspan="5" class="muted">暂无快照</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card span-6">
+    <h2>审计日志</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>时间</th><th>用户</th><th>动作</th><th>目标</th></tr></thead>
+        <tbody>
+          <?php foreach ($auditLogs as $log): ?>
+            <tr>
+              <td><?= e((string) $log['created_at']) ?></td>
+              <td><?= e((string) ($log['username'] ?: '-')) ?></td>
+              <td><?= e((string) $log['action']) ?></td>
+              <td><?= e((string) (($log['target_type'] ?: '-') . ' / ' . ($log['target_name'] ?: '-'))) ?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php if (!$auditLogs): ?><tr><td colspan="4" class="muted">暂无日志</td></tr><?php endif; ?>
         </tbody>
       </table>
     </div>

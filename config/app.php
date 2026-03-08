@@ -3,10 +3,22 @@
 declare(strict_types=1);
 $basePath = dirname(__DIR__);
 $storageRoot = getenv('NBKVM_STORAGE_ROOT') ?: '/var/libvirt/images/nbkvm';
+$dbDriver = getenv('NBKVM_DB_DRIVER') ?: 'sqlite';
 return [
     'app_name' => 'NBKVM',
     'base_path' => $basePath,
-    'database_path' => $basePath . '/storage/database/nbkvm.sqlite',
+    'database' => [
+        'driver' => $dbDriver,
+        'sqlite_path' => $basePath . '/storage/database/nbkvm.sqlite',
+        'mysql' => [
+            'host' => getenv('NBKVM_DB_HOST') ?: '127.0.0.1',
+            'port' => (int) (getenv('NBKVM_DB_PORT') ?: 3306),
+            'database' => getenv('NBKVM_DB_NAME') ?: 'nbkvm',
+            'username' => getenv('NBKVM_DB_USER') ?: 'nbkvm',
+            'password' => getenv('NBKVM_DB_PASS') ?: 'nbkvm',
+            'charset' => 'utf8mb4',
+        ],
+    ],
     'storage_root' => $storageRoot,
     'upload_path' => getenv('NBKVM_UPLOAD_PATH') ?: ($storageRoot . '/uploads'),
     'template_path' => getenv('NBKVM_TEMPLATE_PATH') ?: ($storageRoot . '/templates'),
@@ -14,9 +26,25 @@ return [
     'log_path' => $basePath . '/storage/logs/app.log',
     'max_upload_bytes' => 50 * 1024 * 1024 * 1024,
     'allowed_extensions' => ['iso', 'qcow2', 'img', 'raw'],
+    'auth' => [
+        'default_username' => getenv('NBKVM_ADMIN_USER') ?: 'admin',
+        'default_password' => getenv('NBKVM_ADMIN_PASS') ?: 'admin123456',
+        'session_name' => 'nbkvm_session',
+    ],
+    'novnc' => [
+        'base_url' => getenv('NBKVM_NOVNC_BASE_URL') ?: '',
+        'path' => getenv('NBKVM_NOVNC_PATH') ?: '/vnc.html',
+    ],
+    'cloud_init' => [
+        'enabled' => true,
+        'cloud_localds' => getenv('NBKVM_CLOUD_LOCALDS') ?: 'cloud-localds',
+        'default_domain' => getenv('NBKVM_CLOUD_DOMAIN') ?: 'localdomain',
+        'dns' => getenv('NBKVM_CLOUD_DNS') ?: '1.1.1.1,8.8.8.8',
+    ],
     'libvirt' => [
         'uri' => 'qemu:///system',
         'qemu_img' => 'qemu-img',
+        'virsh' => 'virsh',
         'default_network' => 'default',
         'default_disk_bus' => 'virtio',
         'default_os_variant' => 'generic',

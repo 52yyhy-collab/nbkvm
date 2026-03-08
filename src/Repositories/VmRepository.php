@@ -32,16 +32,17 @@ class VmRepository
     public function create(array $data): int
     {
         $db = $this->db();
-        $stmt = $db->prepare('INSERT INTO vms (name, template_id, cpu, memory_mb, disk_path, disk_size_gb, network_name, status, ip_address, xml_path, created_at) VALUES (:name, :template_id, :cpu, :memory_mb, :disk_path, :disk_size_gb, :network_name, :status, :ip_address, :xml_path, :created_at)');
+        $stmt = $db->prepare('INSERT INTO vms (name, template_id, cpu, memory_mb, disk_path, disk_size_gb, network_name, status, ip_address, xml_path, cloud_init_iso_path, vnc_display, created_at) VALUES (:name, :template_id, :cpu, :memory_mb, :disk_path, :disk_size_gb, :network_name, :status, :ip_address, :xml_path, :cloud_init_iso_path, :vnc_display, :created_at)');
         $stmt->execute($data);
         return (int) $db->lastInsertId();
     }
-    public function updateStatus(int $id, string $status, ?string $ip = null): void
+    public function updateStatus(int $id, string $status, ?string $ip = null, ?string $vncDisplay = null): void
     {
-        $stmt = $this->db()->prepare('UPDATE vms SET status = :status, ip_address = :ip_address, updated_at = :updated_at WHERE id = :id');
+        $stmt = $this->db()->prepare('UPDATE vms SET status = :status, ip_address = :ip_address, vnc_display = :vnc_display, updated_at = :updated_at WHERE id = :id');
         $stmt->execute([
             'status' => $status,
             'ip_address' => $ip,
+            'vnc_display' => $vncDisplay,
             'updated_at' => date('c'),
             'id' => $id,
         ]);

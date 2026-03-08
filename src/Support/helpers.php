@@ -70,3 +70,53 @@ function clear_old(): void
         unset($_SESSION['_old']);
     }
 }
+function csrf_token(): string
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    if (empty($_SESSION['_csrf'])) {
+        $_SESSION['_csrf'] = bin2hex(random_bytes(16));
+    }
+    return $_SESSION['_csrf'];
+}
+function csrf_field(): string
+{
+    return '<input type="hidden" name="_csrf" value="' . e(csrf_token()) . '">';
+}
+function verify_csrf(?string $token): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    return is_string($token) && !empty($_SESSION['_csrf']) && hash_equals($_SESSION['_csrf'], $token);
+}
+function auth_user(): ?array
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    return $_SESSION['auth_user'] ?? null;
+}
+function auth_check(): bool
+{
+    return auth_user() !== null;
+}
+function auth_login(array $user): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    $_SESSION['auth_user'] = [
+        'id' => $user['id'] ?? null,
+        'username' => $user['username'] ?? 'unknown',
+        'role' => $user['role'] ?? 'admin',
+    ];
+}
+function auth_logout(): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    unset($_SESSION['auth_user']);
+}

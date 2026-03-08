@@ -108,7 +108,7 @@ class LibvirtService
     public function createDiskFromImage(string $sourceImage, string $outputDisk, int $sizeGb, ?string $sourceExtension = null): void
     {
         if (!is_dir(dirname($outputDisk))) {
-            mkdir(dirname($outputDisk), 0775, true);
+            mkdir(dirname($outputDisk), 075, true);
         }
         $qemuImg = (string) config('libvirt.qemu_img');
         $format = $this->detectImageFormat($sourceImage, $sourceExtension);
@@ -158,5 +158,13 @@ class LibvirtService
            6 => 'crashed',
             default => 'unknown',
         };
+    }
+    public function vncDisplay(string $name): ?string
+    {
+        $result = $this->shell()->run([(string) config('libvirt.virsh'), '-c', (string) config('libvirt.uri'), 'vncdisplay', $name]);
+        if (!$result->succeeded() || $result->stdout === '') {
+            return null;
+        }
+        return trim($result->stdout);
     }
 }

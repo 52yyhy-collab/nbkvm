@@ -13,4 +13,10 @@ abstract class BaseController
         flash($type, $message);
         redirect($to);
     }
+    protected function requireCsrf(string $token, string $redirectTo = '/'): void
+    {
+        if (!verify_csrf($token)) {
+            $this->back('CSRF 校验失败。', 'error', $redirectTo);
+        }
+    }
 }

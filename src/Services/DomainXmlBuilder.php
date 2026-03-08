@@ -14,13 +14,20 @@ class DomainXmlBuilder
         $diskBus = htmlspecialchars((string) $template['disk_bus'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $graphics = htmlspecialchars((string) config('libvirt.default_graphics'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $bootSection = "<boot dev='hd'/>";
-        $extraDisk = '';
+        $extraDisks = '';
         if (($image['extension'] ?? '') === 'iso') {
             $isoPath = htmlspecialchars((string) $image['path'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $bootSection = "<boot dev='cdrom'/><boot dev='hd'/>";
-            $extraDisk = sprintf(
+            $extraDisks .= sprintf(
                 "\n    <disk type='file' device='cdrom'>\n      <driver name='qemu' type='raw'/>\n      <source file='%s'/>\n      <target dev='sda' bus='sata'/>\n      <readonly/>\n    </disk>",
                 $isoPath
+            );
+        }
+        if (!empty($vm['cloud_init_iso_path'])) {
+            $seedPath = htmlspecialchars((string) $vm['cloud_init_iso_path'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $extraDisks .= sprintf(
+                "\n    <disk type='file' device='cdrom'>\n      <driver name='qemu' type='raw'/>\n      <source file='%s'/>\n      <target dev='sdb' bus='sata'/>\n      <readonly/>\n    </disk>",
+                $seedPath
             );
         }
         return sprintf(
@@ -32,7 +39,7 @@ class DomainXmlBuilder
             $bootSection,
             $diskPath,
             $diskBus,
-            $extraDisk,
+            $extraDisks,
             $network,
             $graphics
         );
