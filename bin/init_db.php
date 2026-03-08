@@ -10,7 +10,6 @@ $idColumn = $driver === 'mysql'
     ? 'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY'
     : 'INTEGER PRIMARY KEY AUTOINCREMENT';
 $boolType = $driver === 'mysql' ? 'TINYINT(1)' : 'INTEGER';
-$textPk = $driver === 'mysql' ? 'VARCHAR(191)' : 'TEXT';
 $queries = [
     "CREATE TABLE IF NOT EXISTS users (
         id $idColumn,
@@ -18,6 +17,12 @@ $queries = [
         password_hash TEXT NOT NULL,
         role VARCHAR(50) NOT NULL DEFAULT 'admin',
         created_at TEXT NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS settings (
+        id $idColumn,
+        key_name VARCHAR(191) NOT NULL UNIQUE,
+        value_text TEXT DEFAULT NULL,
+        updated_at TEXT DEFAULT NULL
     )",
     "CREATE TABLE IF NOT EXISTS images (
         id $idColumn,
@@ -44,6 +49,19 @@ $queries = [
         cloud_init_user VARCHAR(191) DEFAULT NULL,
         cloud_init_password VARCHAR(191) DEFAULT NULL,
         cloud_init_ssh_key TEXT DEFAULT NULL,
+        virtualization_mode VARCHAR(32) DEFAULT 'kvm',
+        cpu_sockets INTEGER DEFAULT 1,
+        cpu_cores INTEGER DEFAULT 1,
+        cpu_threads INTEGER DEFAULT 1,
+        machine_type VARCHAR(64) DEFAULT 'pc',
+        firmware_type VARCHAR(32) DEFAULT 'bios',
+        gpu_type VARCHAR(64) DEFAULT 'cirrus',
+        autostart_default $boolType NOT NULL DEFAULT 0,
+        memory_max_mb INTEGER DEFAULT NULL,
+        memory_overcommit_percent INTEGER DEFAULT 100,
+        disk_overcommit_enabled $boolType NOT NULL DEFAULT 0,
+        disks_json TEXT DEFAULT NULL,
+        nics_json TEXT DEFAULT NULL,
         created_at TEXT NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS vms (
@@ -61,6 +79,10 @@ $queries = [
         xml_path TEXT NOT NULL,
         cloud_init_iso_path TEXT DEFAULT NULL,
         vnc_display VARCHAR(191) DEFAULT NULL,
+        expires_at TEXT DEFAULT NULL,
+        expire_action VARCHAR(32) DEFAULT 'pause',
+        expire_grace_days INTEGER DEFAULT 3,
+        expired_at TEXT DEFAULT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT DEFAULT NULL
     )",
@@ -98,6 +120,8 @@ $queries = [
         bridge_name VARCHAR(64) DEFAULT NULL,
         dhcp_start VARCHAR(64) DEFAULT NULL,
         dhcp_end VARCHAR(64) DEFAULT NULL,
+        ipv6_cidr VARCHAR(128) DEFAULT NULL,
+        ipv6_gateway VARCHAR(128) DEFAULT NULL,
         libvirt_managed $boolType NOT NULL DEFAULT 1,
         autostart $boolType NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL
@@ -106,18 +130,19 @@ $queries = [
         id $idColumn,
         name VARCHAR(191) NOT NULL UNIQUE,
         network_name VARCHAR(191) NOT NULL,
-        gateway VARCHAR(64) NOT NULL,
+        family VARCHAR(16) NOT NULL DEFAULT 'ipv4',
+        gateway VARCHAR(128) NOT NULL,
         prefix_length INTEGER NOT NULL,
         dns_servers TEXT DEFAULT NULL,
-        start_ip VARCHAR(64) NOT NULL,
-        end_ip VARCHAR(64) NOT NULL,
+        start_ip VARCHAR(128) NOT NULL,
+        end_ip VARCHAR(128) NOT NULL,
         interface_name VARCHAR(64) DEFAULT 'eth0',
         created_at TEXT NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS ip_pool_addresses (
         id $idColumn,
         pool_id BIGINT NOT NULL,
-        ip_address VARCHAR(64) NOT NULL,
+        ip_address VARCHAR(128) NOT NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'free',
         vm_id BIGINT DEFAULT NULL,
         created_at TEXT NOT NULL,
@@ -127,14 +152,35 @@ $queries = [
 foreach ($queries as $query) {
     $pdo->exec($query);
 }
-$needsIpPoolColumn = false;
-try {
-    $pdo->query('SELECT ip_pool_id FROM vms LIMIT 1');
-} catch (Throwable) {
-    $needsIpPoolColumn = true;
-}
-if ($needsIpPoolColumn) {
-    $pdo->exec('ALTER TABLE vms ADD COLUMN ip_pool_id BIGINT DEFAULT NULL');
+$ensureColumns = [
+    ['vms', 'ip_pool_id', 'BIGINT DEFAULT NULL'],
+    ['vms', 'expires_at', 'TEXT DEFAULT NULL'],
+    ['vms', 'expire_action', "VARCHAR(32) DEFAULT 'pause'"],
+    ['vms', 'expire_grace_days', 'INTEGER DEFAULT 3'],
+    ['vms', 'expired_at', 'TEXT DEFAULT NULL'],
+    ['templates', 'virtualization_mode', "VARCHAR(32) DEFAULT 'kvm'"],
+    ['templates', 'cpu_sockets', 'INTEGER DEFAULT 1'],
+    ['templates', 'cpu_cores', 'INTEGER DEFAULT 1'],
+    ['templates', 'cpu_threads', 'INTEGER DEFAULT 1'],
+    ['templates', 'machine_type', "VARCHAR(64) DEFAULT 'pc'"],
+    ['templates', 'firmware_type', "VARCHAR(32) DEFAULT 'bios'"],
+    ['templates', 'gpu_type', "VARCHAR(64) DEFAULT 'cirrus'"],
+    ['templates', 'autostart_default', $boolType . ' NOT NULL DEFAULT 0'],
+    ['templates', 'memory_max_mb', 'INTEGER DEFAULT NULL'],
+    ['templates', 'memory_overcommit_percent', 'INTEGER DEFAULT 100'],
+    ['templates', 'disk_overcommit_enabled', $boolType . ' NOT NULL DEFAULT 0'],
+    ['templates', 'disks_json', 'TEXT DEFAULT NULL'],
+    ['templates', 'nics_json', 'TEXT DEFAULT NULL'],
+    ['networks', 'ipv6_cidr', 'VARCHAR(128) DEFAULT NULL'],
+    ['networks', 'ipv6_gateway', 'VARCHAR(128) DEFAULT NULL'],
+    ['ip_pools', 'family', "VARCHAR(16) NOT NULL DEFAULT 'ipv4'"],
+];
+foreach ($ensureColumns as [$table, $column, $definition]) {
+    try {
+        $pdo->query("SELECT {$column} FROM {$table} LIMIT 1");
+    } catch (Throwable) {
+        $pdo->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+    }
 }
 $username = (string) config('auth.default_username');
 $exists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username');
@@ -147,6 +193,20 @@ if ((int) $exists->fetchColumn() === 0) {
         'role' => 'admin',
         'created_at' => date('c'),
     ]);
+}
+$settings = [
+    'upload_max_size_mb' => '51200',
+    'system_variables_json' => '{}',
+    'default_expire_action' => 'pause',
+    'expire_grace_days' => '3',
+];
+foreach ($settings as $key => $value) {
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM settings WHERE key_name = :key_name');
+    $stmt->execute(['key_name' => $key]);
+    if ((int) $stmt->fetchColumn() === 0) {
+        $insert = $pdo->prepare('INSERT INTO settings (key_name, value_text, updated_at) VALUES (:key_name, :value_text, :updated_at)');
+        $insert->execute(['key_name' => $key, 'value_text' => $value, 'updated_at' => date('c')]);
+    }
 }
 $networkExists = $pdo->prepare('SELECT COUNT(*) FROM networks WHERE name = :name');
 $networkExists->execute(['name' => 'default']);
