@@ -25,8 +25,9 @@ class ImageRepository
     }
     public function create(array $data): int
     {
-        $stmt = $this->db()->prepare('INSERT INTO images (name, original_name, path, extension, size_bytes, created_at) VALUES (:name, :original_name, :path, :extension, :size_bytes, :created_at)');
+        $db = $this->db();
+        $stmt = $db->prepare('INSERT INTO images (name, original_name, path, extension, size_bytes, created_at) VALUES (:name, :original_name, :path, :extension, :size_bytes, :created_at)');
         $stmt->execute($data);
-        return (int) $this->db()->lastInsertId();
+        return (int) $db->lastInsertId();
     }
 }

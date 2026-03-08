@@ -25,8 +25,9 @@ class TemplateRepository
     }
     public function create(array $data): int
     {
-        $stmt = $this->db()->prepare('INSERT INTO templates (name, image_id, image_type, os_variant, cpu, memory_mb, disk_size_gb, disk_bus, network_name, notes, created_at) VALUES (:name, :image_id, :image_type, :os_variant, :cpu, :memory_mb, :disk_size_gb, :disk_bus, :network_name, :notes, :created_at)');
+        $db = $this->db();
+        $stmt = $db->prepare('INSERT INTO templates (name, image_id, image_type, os_variant, cpu, memory_mb, disk_size_gb, disk_bus, network_name, notes, created_at) VALUES (:name, :image_id, :image_type, :os_variant, :cpu, :memory_mb, :disk_size_gb, :disk_bus, :network_name, :notes, :created_at)');
         $stmt->execute($data);
-        return (int) $this->db()->lastInsertId();
+        return (int) $db->lastInsertId();
     }
 }

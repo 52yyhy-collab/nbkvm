@@ -31,9 +31,10 @@ class VmRepository
     }
     public function create(array $data): int
     {
-        $stmt = $this->db()->prepare('INSERT INTO vms (name, template_id, cpu, memory_mb, disk_path, disk_size_gb, network_name, status, ip_address, xml_path, created_at) VALUES (:name, :template_id, :cpu, :memory_mb, :disk_path, :disk_size_gb, :network_name, :status, :ip_address, :xml_path, :created_at)');
+        $db = $this->db();
+        $stmt = $db->prepare('INSERT INTO vms (name, template_id, cpu, memory_mb, disk_path, disk_size_gb, network_name, status, ip_address, xml_path, created_at) VALUES (:name, :template_id, :cpu, :memory_mb, :disk_path, :disk_size_gb, :network_name, :status, :ip_address, :xml_path, :created_at)');
         $stmt->execute($data);
-        return (int) $this->db()->lastInsertId();
+        return (int) $db->lastInsertId();
     }
     public function updateStatus(int $id, string $status, ?string $ip = null): void
     {
