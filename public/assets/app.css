@@ -137,6 +137,11 @@ details textarea { margin-top: 8px; }
   border-radius: 16px;
   padding: 14px;
 }
+details.module-card > summary {
+  margin: 0;
+  font-weight: 600;
+  color: #dce8ff;
+}
 .inline-banner {
   margin: 8px 0 14px;
   padding: 10px 12px;
@@ -166,6 +171,18 @@ details textarea { margin-top: 8px; }
   border: 1px dashed var(--line);
   color: var(--muted);
   font-size: 13px;
+}
+.editor-kicker {
+  margin-top: 4px;
+  color: #7fb0ff;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.nic-network-hint {
+  margin-top: 6px;
+}
+.nic-editor.readonly .nic-card {
+  opacity: 0.88;
 }
 .vm-template-nics, .host-interfaces {
   margin-top: 8px;

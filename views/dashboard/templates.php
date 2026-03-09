@@ -81,11 +81,11 @@
 
         <section class="module-card">
           <div class="section-split">
-            <h4>网络模块</h4>
-            <button class="btn secondary js-add-nic" type="button" data-editor="template">新增网卡</button>
+            <h4>网络模块（netX / ipconfigX）</h4>
+            <button class="btn secondary js-add-nic" type="button" data-editor="template">新增 netX</button>
           </div>
           <div class="nic-editor" id="template-nic-editor"></div>
-          <p class="muted">网卡仅选择网络；如果该网络启用了地址池，IPv4/IPv6 选“pool”时会自动继承，不再单独理解 pool 对象。</p>
+          <p class="muted">每张卡片就是一块 PVE 风格 netX：Bridge / VLAN Tag / Model / firewall / link_down / MAC；卡片下半部分对应 ipconfigX，用于选择 DHCP / static / auto / pool。</p>
           <details>
             <summary>查看生成后的 nics_json</summary>
             <textarea id="template-nics-preview" readonly></textarea>

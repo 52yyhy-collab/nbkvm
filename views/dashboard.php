@@ -9,9 +9,9 @@ $pageLabels = [
 ];
 $pageDescriptions = [
     'overview' => '环境、任务、审计与资源概览',
-    'networks' => 'PVE 风格网络与地址池一体化配置',
-    'templates' => '镜像、CPU、内存、磁盘、网络等模板编排',
-    'vms' => '创建虚拟机、运行控制台与安全更新',
+    'networks' => '节点网络资源、Bridge Profile 与默认 IP 池',
+    'templates' => '镜像、CPU、内存、磁盘、netX/ipconfigX 模板编排',
+    'vms' => '创建虚拟机、编辑 netX/ipconfigX、运行控制台与安全更新',
     'images' => '镜像上传、转换与清理',
     'system' => '系统参数、密码与用户权限',
 ];
@@ -20,8 +20,19 @@ $encodeJson = static fn (mixed $value): string => (string) json_encode($value, J
 $nicSummary = static function (array $nic): string {
     $bridge = (string) ($nic['bridge'] ?? $nic['network_name'] ?? '-');
     $model = (string) ($nic['model'] ?? 'virtio');
-    $vlan = ($nic['vlan_tag'] ?? null) !== null && (string) ($nic['vlan_tag'] ?? '') !== '' ? (' vlan ' . $nic['vlan_tag']) : '';
-    return $bridge . ' / ' . $model . $vlan . ' / IPv4 ' . ($nic['ipv4_mode'] ?? 'dhcp') . ' / IPv6 ' . ($nic['ipv6_mode'] ?? 'none');
+    $parts = ['bridge=' . $bridge, 'model=' . $model];
+    if (($nic['vlan_tag'] ?? null) !== null && (string) ($nic['vlan_tag'] ?? '') !== '') {
+        $parts[] = 'tag=' . $nic['vlan_tag'];
+    }
+    if (!empty($nic['firewall'])) {
+        $parts[] = 'firewall=1';
+    }
+    if (!empty($nic['link_down'])) {
+        $parts[] = 'link_down=1';
+    }
+    $parts[] = 'ip4=' . (string) ($nic['ipv4_mode'] ?? 'dhcp');
+    $parts[] = 'ip6=' . (string) ($nic['ipv6_mode'] ?? 'none');
+    return implode(', ', $parts);
 };
 $diskSummary = static function (array $disk): string {
     $primary = !empty($disk['is_primary']) ? '主盘' : '数据盘';

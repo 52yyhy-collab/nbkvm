@@ -402,15 +402,28 @@ class NicConfigService
             }
         }
 
+        if ($bridge !== '') {
+            return [
+                'id' => $networkId,
+                'name' => $networkName !== '' ? $networkName : $bridge,
+                'bridge_name' => $bridge,
+                'libvirt_managed' => 0,
+                'cidr' => '',
+                'gateway' => null,
+                'ipv6_cidr' => '',
+                'ipv6_gateway' => null,
+            ];
+        }
+
         if ($strict) {
-            $identifier = $networkName !== '' ? $networkName : ($bridge !== '' ? $bridge : $fallbackNetwork);
+            $identifier = $networkName !== '' ? $networkName : $fallbackNetwork;
             throw new RuntimeException('找不到网卡绑定的网络：' . $identifier);
         }
 
         return [
             'id' => $networkId,
-            'name' => $networkName !== '' ? $networkName : ($fallback !== '' ? $fallback : ($bridge !== '' ? $bridge : 'unknown-network')),
-            'bridge_name' => $bridge !== '' ? $bridge : ($networkName !== '' ? $networkName : $fallback),
+            'name' => $networkName !== '' ? $networkName : ($fallback !== '' ? $fallback : 'unknown-network'),
+            'bridge_name' => $fallback !== '' ? $fallback : ($networkName !== '' ? $networkName : 'unknown-bridge'),
             'libvirt_managed' => 0,
             'cidr' => '',
             'gateway' => null,

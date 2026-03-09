@@ -42,6 +42,12 @@ class IpAddressRepository
         $stmt->execute(['vm_id' => $vmId]);
         return $stmt->fetch() ?: null;
     }
+    public function findByPoolAndIp(int $poolId, string $ipAddress): ?array
+    {
+        $stmt = $this->db()->prepare('SELECT * FROM ip_pool_addresses WHERE pool_id = :pool_id AND ip_address = :ip_address LIMIT 1');
+        $stmt->execute(['pool_id' => $poolId, 'ip_address' => $ipAddress]);
+        return $stmt->fetch() ?: null;
+    }
     public function assign(int $id, int $vmId): void
     {
         $stmt = $this->db()->prepare("UPDATE ip_pool_addresses SET status='allocated', vm_id=:vm_id, updated_at=:updated_at WHERE id=:id");

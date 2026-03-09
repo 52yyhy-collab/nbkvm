@@ -54,7 +54,7 @@ class VmRepository
 
     public function updateConfig(int $id, array $data): void
     {
-        $stmt = $this->db()->prepare('UPDATE vms SET cpu = :cpu, cpu_sockets = :cpu_sockets, cpu_cores = :cpu_cores, cpu_threads = :cpu_threads, memory_mb = :memory_mb, disk_size_gb = :disk_size_gb, disks_json = :disks_json, expires_at = :expires_at, expire_action = :expire_action, expire_grace_days = :expire_grace_days, xml_path = :xml_path, updated_at = :updated_at WHERE id = :id');
+        $stmt = $this->db()->prepare('UPDATE vms SET cpu = :cpu, cpu_sockets = :cpu_sockets, cpu_cores = :cpu_cores, cpu_threads = :cpu_threads, memory_mb = :memory_mb, disk_size_gb = :disk_size_gb, disks_json = :disks_json, network_name = :network_name, ip_pool_id = :ip_pool_id, ip_address = :ip_address, nics_json = :nics_json, cloud_init_iso_path = :cloud_init_iso_path, expires_at = :expires_at, expire_action = :expire_action, expire_grace_days = :expire_grace_days, xml_path = :xml_path, updated_at = :updated_at WHERE id = :id');
         $stmt->execute($data + [
             'updated_at' => date('c'),
             'id' => $id,

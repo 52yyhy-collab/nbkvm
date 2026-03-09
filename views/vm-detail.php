@@ -50,46 +50,53 @@
 </section>
 
 <section class="card span-12">
-  <h2>网卡配置</h2>
+  <h2>网卡配置（netX / ipconfigX）</h2>
   <div class="table-wrap">
     <table class="table">
       <thead>
         <tr>
-          <th>接口</th>
-          <th>Bridge / 网络</th>
-          <th>模型</th>
-          <th>IPv4</th>
-          <th>IPv6</th>
-          <th>参数</th>
+          <th>netX</th>
+          <th>Bridge / Profile</th>
+          <th>PVE 参数</th>
+          <th>ipconfig</th>
         </tr>
       </thead>
       <tbody>
-        <?php foreach (($vm['normalized_nics'] ?? []) as $nic): ?>
+        <?php foreach (($vm['normalized_nics'] ?? []) as $index => $nic): ?>
           <tr>
-            <td><?= e((string) ($nic['interface_name'] ?? '-')) ?></td>
+            <td>
+              <strong>net<?= (int) $index ?></strong><br>
+              <span class="muted"><?= e((string) ($nic['interface_name'] ?? ('eth' . $index))) ?></span>
+            </td>
             <td>
               <?= e((string) ($nic['bridge'] ?? '-')) ?><br>
-              <span class="muted"><?= e((string) ($nic['source_type'] ?? 'bridge')) ?> / <?= e((string) ($nic['network_name'] ?? '-')) ?></span>
-            </td>
-            <td><?= e((string) ($nic['model'] ?? 'virtio')) ?></td>
-            <td>
-              <?= e((string) ($nic['ipv4_mode'] ?? 'dhcp')) ?>
-              <?php if (!empty($nic['ipv4_address'])): ?><br><span class="muted"><?= e((string) $nic['ipv4_address']) ?>/<?= e((string) ($nic['ipv4_prefix_length'] ?? '')) ?></span><?php endif; ?>
-              <?php if (!empty($nic['ipv4_gateway'])): ?><br><span class="muted">gw <?= e((string) $nic['ipv4_gateway']) ?></span><?php endif; ?>
+              <span class="muted"><?= e((string) ($nic['network_name'] ?? '-')) ?> / <?= e((string) ($nic['source_type'] ?? 'bridge')) ?></span>
             </td>
             <td>
-              <?= e((string) ($nic['ipv6_mode'] ?? 'none')) ?>
-              <?php if (!empty($nic['ipv6_address'])): ?><br><span class="muted"><?= e((string) $nic['ipv6_address']) ?>/<?= e((string) ($nic['ipv6_prefix_length'] ?? '')) ?></span><?php endif; ?>
-              <?php if (!empty($nic['ipv6_gateway'])): ?><br><span class="muted">gw <?= e((string) $nic['ipv6_gateway']) ?></span><?php endif; ?>
-            </td>
-            <td>
-              VLAN: <?= e((string) (($nic['vlan_tag'] ?? '') !== '' && $nic['vlan_tag'] !== null ? $nic['vlan_tag'] : '-')) ?><br>
-              MAC: <?= e((string) (($nic['mac'] ?? '') ?: '-')) ?><br>
+              model=<?= e((string) ($nic['model'] ?? 'virtio')) ?><br>
+              tag=<?= e((string) (($nic['vlan_tag'] ?? '') !== '' && $nic['vlan_tag'] !== null ? $nic['vlan_tag'] : '-')) ?><br>
+              MAC=<?= e((string) (($nic['mac'] ?? '') ?: '-')) ?><br>
               <span class="muted">firewall <?= !empty($nic['firewall']) ? 'on' : 'off' ?> / link <?= !empty($nic['link_down']) ? 'down' : 'up' ?></span>
+            </td>
+            <td>
+              <div class="resource-stack">
+                <div>
+                  <strong>ipconfig<?= (int) $index ?> / IPv4</strong>
+                  <div class="muted"><?= e((string) ($nic['ipv4_mode'] ?? 'dhcp')) ?></div>
+                  <?php if (!empty($nic['ipv4_address'])): ?><div class="muted"><?= e((string) $nic['ipv4_address']) ?>/<?= e((string) ($nic['ipv4_prefix_length'] ?? '')) ?></div><?php endif; ?>
+                  <?php if (!empty($nic['ipv4_gateway'])): ?><div class="muted">gw <?= e((string) $nic['ipv4_gateway']) ?></div><?php endif; ?>
+                </div>
+                <div>
+                  <strong>IPv6</strong>
+                  <div class="muted"><?= e((string) ($nic['ipv6_mode'] ?? 'none')) ?></div>
+                  <?php if (!empty($nic['ipv6_address'])): ?><div class="muted"><?= e((string) $nic['ipv6_address']) ?>/<?= e((string) ($nic['ipv6_prefix_length'] ?? '')) ?></div><?php endif; ?>
+                  <?php if (!empty($nic['ipv6_gateway'])): ?><div class="muted">gw <?= e((string) $nic['ipv6_gateway']) ?></div><?php endif; ?>
+                </div>
+              </div>
             </td>
           </tr>
         <?php endforeach; ?>
-        <?php if (empty($vm['normalized_nics'])): ?><tr><td colspan="6" class="muted">暂无网卡信息</td></tr><?php endif; ?>
+        <?php if (empty($vm['normalized_nics'])): ?><tr><td colspan="4" class="muted">暂无网卡信息</td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>

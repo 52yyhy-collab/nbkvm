@@ -330,13 +330,22 @@ class NetworkService
     private function networkMatchesNic(array $network, array $nic): bool
     {
         $networkId = (int) ($network['id'] ?? 0);
-        if ($networkId > 0 && (int) ($nic['network_id'] ?? 0) === $networkId) {
-            return true;
+        $nicNetworkId = (int) ($nic['network_id'] ?? 0);
+        if ($networkId > 0 && $nicNetworkId > 0) {
+            return $nicNetworkId === $networkId;
         }
-        if ((string) ($nic['network_name'] ?? '') === (string) ($network['name'] ?? '')) {
-            return true;
+
+        $networkName = trim((string) ($network['name'] ?? ''));
+        $nicNetworkName = trim((string) ($nic['network_name'] ?? ''));
+        if ($networkName !== '' && $nicNetworkName !== '') {
+            return $nicNetworkName === $networkName;
         }
-        return trim((string) ($nic['bridge'] ?? '')) !== '' && trim((string) ($nic['bridge'] ?? '')) === trim((string) ($network['bridge_name'] ?? ''));
+
+        $bridgeName = trim((string) ($network['bridge_name'] ?? ''));
+        return $nicNetworkId <= 0
+            && $nicNetworkName === ''
+            && $bridgeName !== ''
+            && trim((string) ($nic['bridge'] ?? '')) === $bridgeName;
     }
 
     private function syncPoolNetworkName(int $networkId, string $networkName): void

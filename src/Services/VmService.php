@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nbkvm\Services;
 
 use Nbkvm\Repositories\ImageRepository;
+use Nbkvm\Repositories\IpAddressRepository;
 use Nbkvm\Repositories\SettingRepository;
 use Nbkvm\Repositories\TemplateRepository;
 use Nbkvm\Repositories\VmRepository;
@@ -252,53 +253,123 @@ class VmService
             throw new RuntimeException('CPU/内存仅允许在虚拟机已关机（shut off/defined）时修改。');
         }
 
-        $disks = (new DiskConfigService())->hydrateVmDisks($vm, $template);
-        $nics = (new NicConfigService())->hydrateVmNics($vm, $template);
-        $payload = [
-            'name' => (string) $vm['name'],
-            'template_id' => (int) $vm['template_id'],
-            'cpu' => $cpu,
-            'cpu_sockets' => $cpuSockets,
-            'cpu_cores' => $cpuCores,
-            'cpu_threads' => $cpuThreads,
-            'memory_mb' => $memoryMb,
-            'disk_path' => (string) $vm['disk_path'],
-            'disk_size_gb' => (int) ($disks[0]['size_gb'] ?? ($vm['disk_size_gb'] ?? 0)),
-            'disks_json' => json_encode($disks, JSON_UNESCAPED_UNICODE),
-            'network_name' => (string) $vm['network_name'],
-            'ip_pool_id' => ($vm['ip_pool_id'] ?? null) !== null ? (int) $vm['ip_pool_id'] : null,
-            'status' => (string) ($vm['status'] ?? 'defined'),
-            'ip_address' => $vm['ip_address'] ?? null,
-            'xml_path' => (string) $vm['xml_path'],
-            'cloud_init_iso_path' => $vm['cloud_init_iso_path'] ?? null,
-            'expires_at' => $expiresAt,
-            'expire_action' => $expireAction,
-            'expire_grace_days' => $expireGraceDays,
-            'nics_json' => $vm['nics_json'] ?? '[]',
-            'disks' => $disks,
-            'nics' => $nics,
-        ];
+        $diskService = new DiskConfigService();
+        $nicService = new NicConfigService();
+        $disks = $diskService->hydrateVmDisks($vm, $template);
+        $currentNics = $nicService->hydrateVmNics($vm, $template);
+        $requestedNics = array_key_exists('vm_nics_json', $data)
+            ? $nicService->normalizeVmOverride((string) ($data['vm_nics_json'] ?? ''), $currentNics)
+            : $currentNics;
 
-        if ($hardwareChanged) {
-            $xml = (new DomainXmlBuilder())->build($payload, $template, $image);
-            file_put_contents((string) $vm['xml_path'], $xml);
-            @chmod((string) $vm['xml_path'], 0644);
-            (new LibvirtService())->define($xml);
+        $networkChanged = json_encode($requestedNics, JSON_UNESCAPED_UNICODE) !== json_encode($currentNics, JSON_UNESCAPED_UNICODE);
+        if ($networkChanged && !$this->canEditHardware((string) ($vm['status'] ?? 'unknown'))) {
+            throw new RuntimeException('VM 网卡 / IP 配置仅允许在虚拟机已关机（shut off/defined）时修改。');
         }
 
-        $repo->updateConfig($id, [
-            'cpu' => $cpu,
-            'cpu_sockets' => $cpuSockets,
-            'cpu_cores' => $cpuCores,
-            'cpu_threads' => $cpuThreads,
-            'memory_mb' => $memoryMb,
-            'disk_size_gb' => (int) ($disks[0]['size_gb'] ?? ($vm['disk_size_gb'] ?? 0)),
-            'disks_json' => json_encode($disks, JSON_UNESCAPED_UNICODE),
-            'expires_at' => $expiresAt,
-            'expire_action' => $expireAction,
-            'expire_grace_days' => $expireGraceDays,
-            'xml_path' => (string) $vm['xml_path'],
-        ]);
+        $cloudInitEnabled = (int) ($template['cloud_init_enabled'] ?? 0) === 1;
+        if ($nicService->requiresCloudInitConfig($requestedNics) && !$cloudInitEnabled) {
+            throw new RuntimeException('模板未启用 cloud-init，不能把 VM 网卡改成 static/pool IP 配置。');
+        }
+
+        $resolvedNics = $this->mergePoolAssignments($requestedNics, $currentNics);
+        $poolTopologyChanged = $this->poolTopologyChanged($currentNics, $requestedNics)
+            || $this->poolAddressesMissing($resolvedNics);
+        $backupAssignments = [];
+        $poolAllocationsMutated = false;
+
+        if ($networkChanged && $poolTopologyChanged) {
+            $backupAssignments = $this->poolAssignmentsFromNics($currentNics);
+            $poolService = new IpPoolService();
+            try {
+                $poolService->releaseByVmId($id);
+                $poolAllocationsMutated = true;
+                $resolvedNics = $this->allocatePoolAddresses($id, $resolvedNics);
+            } catch (\Throwable $e) {
+                try {
+                    $poolService->releaseByVmId($id);
+                } catch (\Throwable) {
+                }
+                $this->restorePoolAssignments($id, $backupAssignments);
+                throw $e;
+            }
+        }
+
+        try {
+            $primaryNetworkName = $nicService->primaryNetworkName($resolvedNics);
+            $primaryPoolId = $nicService->primaryPoolId($resolvedNics);
+            $primaryIpAddress = $nicService->firstKnownAddress($resolvedNics) ?? ($vm['ip_address'] ?? null);
+            $cloudInitIsoPath = $vm['cloud_init_iso_path'] ?? null;
+
+            if ($networkChanged && $cloudInitEnabled) {
+                $cloudInitIsoPath = (new CloudInitService())->createSeedIso(
+                    (string) $vm['name'],
+                    (string) (($template['cloud_init_user'] ?? '') ?: 'ubuntu'),
+                    ($template['cloud_init_password'] ?? null) ?: null,
+                    ($template['cloud_init_ssh_key'] ?? null) ?: null,
+                    $resolvedNics
+                );
+            }
+
+            $payload = [
+                'name' => (string) $vm['name'],
+                'template_id' => (int) $vm['template_id'],
+                'cpu' => $cpu,
+                'cpu_sockets' => $cpuSockets,
+                'cpu_cores' => $cpuCores,
+                'cpu_threads' => $cpuThreads,
+                'memory_mb' => $memoryMb,
+                'disk_path' => (string) $vm['disk_path'],
+                'disk_size_gb' => (int) ($disks[0]['size_gb'] ?? ($vm['disk_size_gb'] ?? 0)),
+                'disks_json' => json_encode($disks, JSON_UNESCAPED_UNICODE),
+                'network_name' => $primaryNetworkName,
+                'ip_pool_id' => $primaryPoolId,
+                'status' => (string) ($vm['status'] ?? 'defined'),
+                'ip_address' => $primaryIpAddress,
+                'xml_path' => (string) $vm['xml_path'],
+                'cloud_init_iso_path' => $cloudInitIsoPath,
+                'expires_at' => $expiresAt,
+                'expire_action' => $expireAction,
+                'expire_grace_days' => $expireGraceDays,
+                'nics_json' => json_encode($resolvedNics, JSON_UNESCAPED_UNICODE),
+                'disks' => $disks,
+                'nics' => $resolvedNics,
+            ];
+
+            if ($hardwareChanged || $networkChanged) {
+                $xml = (new DomainXmlBuilder())->build($payload, $template, $image);
+                file_put_contents((string) $vm['xml_path'], $xml);
+                @chmod((string) $vm['xml_path'], 0644);
+                (new LibvirtService())->define($xml);
+            }
+
+            $repo->updateConfig($id, [
+                'cpu' => $cpu,
+                'cpu_sockets' => $cpuSockets,
+                'cpu_cores' => $cpuCores,
+                'cpu_threads' => $cpuThreads,
+                'memory_mb' => $memoryMb,
+                'disk_size_gb' => (int) ($disks[0]['size_gb'] ?? ($vm['disk_size_gb'] ?? 0)),
+                'disks_json' => json_encode($disks, JSON_UNESCAPED_UNICODE),
+                'network_name' => $primaryNetworkName,
+                'ip_pool_id' => $primaryPoolId,
+                'ip_address' => $primaryIpAddress,
+                'nics_json' => json_encode($resolvedNics, JSON_UNESCAPED_UNICODE),
+                'cloud_init_iso_path' => $cloudInitIsoPath,
+                'expires_at' => $expiresAt,
+                'expire_action' => $expireAction,
+                'expire_grace_days' => $expireGraceDays,
+                'xml_path' => (string) $vm['xml_path'],
+            ]);
+        } catch (\Throwable $e) {
+            if ($poolAllocationsMutated) {
+                try {
+                    (new IpPoolService())->releaseByVmId($id);
+                } catch (\Throwable) {
+                }
+                $this->restorePoolAssignments($id, $backupAssignments);
+            }
+            throw $e;
+        }
     }
 
     public function refreshStates(): void
@@ -362,6 +433,164 @@ class VmService
         }
         (new IpPoolService())->releaseByVmId($id);
         (new VmRepository())->delete($id);
+    }
+
+    private function mergePoolAssignments(array $requestedNics, array $currentNics): array
+    {
+        $merged = [];
+        foreach (array_values($requestedNics) as $index => $nic) {
+            if (!is_array($nic)) {
+                continue;
+            }
+            $current = is_array($currentNics[$index] ?? null) ? $currentNics[$index] : [];
+
+            if ((string) ($nic['ipv4_mode'] ?? 'dhcp') === 'pool'
+                && (int) ($nic['ipv4_pool_id'] ?? 0) > 0
+                && (int) ($current['ipv4_pool_id'] ?? 0) === (int) ($nic['ipv4_pool_id'] ?? 0)
+            ) {
+                foreach (['ipv4_address', 'ipv4_prefix_length', 'ipv4_gateway', 'ipv4_dns_servers'] as $field) {
+                    if (empty($nic[$field]) && !empty($current[$field])) {
+                        $nic[$field] = $current[$field];
+                    }
+                }
+            }
+
+            if ((string) ($nic['ipv6_mode'] ?? 'none') === 'pool'
+                && (int) ($nic['ipv6_pool_id'] ?? 0) > 0
+                && (int) ($current['ipv6_pool_id'] ?? 0) === (int) ($nic['ipv6_pool_id'] ?? 0)
+            ) {
+                foreach (['ipv6_address', 'ipv6_prefix_length', 'ipv6_gateway', 'ipv6_dns_servers'] as $field) {
+                    if (empty($nic[$field]) && !empty($current[$field])) {
+                        $nic[$field] = $current[$field];
+                    }
+                }
+            }
+
+            $merged[] = $nic;
+        }
+        return $merged;
+    }
+
+    private function poolTopologyChanged(array $currentNics, array $requestedNics): bool
+    {
+        $signature = static function (array $nics): string {
+            $items = [];
+            foreach (array_values($nics) as $nic) {
+                if (!is_array($nic)) {
+                    continue;
+                }
+                $items[] = [
+                    'ipv4_mode' => (string) ($nic['ipv4_mode'] ?? 'dhcp'),
+                    'ipv4_pool_id' => ($nic['ipv4_pool_id'] ?? null) !== null ? (int) $nic['ipv4_pool_id'] : null,
+                    'ipv6_mode' => (string) ($nic['ipv6_mode'] ?? 'none'),
+                    'ipv6_pool_id' => ($nic['ipv6_pool_id'] ?? null) !== null ? (int) $nic['ipv6_pool_id'] : null,
+                ];
+            }
+            return (string) json_encode($items, JSON_UNESCAPED_UNICODE);
+        };
+
+        return $signature($currentNics) !== $signature($requestedNics);
+    }
+
+    private function poolAddressesMissing(array $nics): bool
+    {
+        foreach ($nics as $nic) {
+            if (!is_array($nic)) {
+                continue;
+            }
+            if ((string) ($nic['ipv4_mode'] ?? 'dhcp') === 'pool' && trim((string) ($nic['ipv4_address'] ?? '')) === '') {
+                return true;
+            }
+            if ((string) ($nic['ipv6_mode'] ?? 'none') === 'pool' && trim((string) ($nic['ipv6_address'] ?? '')) === '') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function allocatePoolAddresses(int $vmId, array $nics): array
+    {
+        $poolService = new IpPoolService();
+        $resolved = [];
+        foreach (array_values($nics) as $index => $nic) {
+            if (!is_array($nic)) {
+                continue;
+            }
+
+            $nicConfig = $nic;
+            $nicConfig['interface_name'] = trim((string) ($nic['interface_name'] ?? ('eth' . $index))) ?: ('eth' . $index);
+
+            if ((string) ($nicConfig['ipv4_mode'] ?? 'dhcp') === 'pool') {
+                $allocation = $poolService->allocate((int) $nicConfig['ipv4_pool_id'], $vmId);
+                if ($allocation !== null) {
+                    $nicConfig['ipv4_address'] = $allocation['ip_address'];
+                    $nicConfig['ipv4_prefix_length'] = $allocation['prefix_length'];
+                    $nicConfig['ipv4_gateway'] = $allocation['gateway'];
+                    $nicConfig['ipv4_dns_servers'] = $allocation['dns_servers'];
+                }
+            }
+
+            if ((string) ($nicConfig['ipv6_mode'] ?? 'none') === 'pool') {
+                $allocation = $poolService->allocate((int) $nicConfig['ipv6_pool_id'], $vmId);
+                if ($allocation !== null) {
+                    $nicConfig['ipv6_address'] = $allocation['ip_address'];
+                    $nicConfig['ipv6_prefix_length'] = $allocation['prefix_length'];
+                    $nicConfig['ipv6_gateway'] = $allocation['gateway'];
+                    $nicConfig['ipv6_dns_servers'] = $allocation['dns_servers'];
+                }
+            }
+
+            $resolved[] = $nicConfig;
+        }
+        return $resolved;
+    }
+
+    private function poolAssignmentsFromNics(array $nics): array
+    {
+        $assignments = [];
+        foreach ($nics as $nic) {
+            if (!is_array($nic)) {
+                continue;
+            }
+            if ((string) ($nic['ipv4_mode'] ?? 'dhcp') === 'pool'
+                && (int) ($nic['ipv4_pool_id'] ?? 0) > 0
+                && trim((string) ($nic['ipv4_address'] ?? '')) !== ''
+            ) {
+                $assignments[] = [
+                    'pool_id' => (int) $nic['ipv4_pool_id'],
+                    'ip_address' => (string) $nic['ipv4_address'],
+                ];
+            }
+            if ((string) ($nic['ipv6_mode'] ?? 'none') === 'pool'
+                && (int) ($nic['ipv6_pool_id'] ?? 0) > 0
+                && trim((string) ($nic['ipv6_address'] ?? '')) !== ''
+            ) {
+                $assignments[] = [
+                    'pool_id' => (int) $nic['ipv6_pool_id'],
+                    'ip_address' => (string) $nic['ipv6_address'],
+                ];
+            }
+        }
+        return $assignments;
+    }
+
+    private function restorePoolAssignments(int $vmId, array $assignments): void
+    {
+        $repo = new IpAddressRepository();
+        foreach ($assignments as $assignment) {
+            if (!is_array($assignment)) {
+                continue;
+            }
+            $poolId = (int) ($assignment['pool_id'] ?? 0);
+            $ipAddress = trim((string) ($assignment['ip_address'] ?? ''));
+            if ($poolId <= 0 || $ipAddress === '') {
+                continue;
+            }
+            $row = $repo->findByPoolAndIp($poolId, $ipAddress);
+            if ($row !== null) {
+                $repo->assign((int) $row['id'], $vmId);
+            }
+        }
     }
 
     private function canEditHardware(string $status): bool

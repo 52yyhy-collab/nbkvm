@@ -72,6 +72,12 @@ class DashboardController extends BaseController
 
         $networks = $networkRepo->all();
         $pools = $poolRepo->all();
+        $bridgeCandidates = (new HostNetworkDiscoveryService())->detect();
+        $hostResourcesByName = [];
+        foreach (($bridgeCandidates['all'] ?? []) as $resource) {
+            $hostResourcesByName[(string) ($resource['name'] ?? '')] = $resource;
+        }
+
         $poolsByNetwork = [];
         foreach ($pools as $pool) {
             $key = (int) ($pool['network_id'] ?? 0) > 0 ? 'id:' . (int) $pool['network_id'] : 'name:' . (string) ($pool['network_name'] ?? '');
@@ -84,15 +90,17 @@ class DashboardController extends BaseController
             $networkPools = $poolsByNetwork[$key] ?? ($poolsByNetwork['name:' . (string) $network['name']] ?? []);
             $network['ipv4_pool'] = $this->firstPoolByFamily($networkPools, 'ipv4');
             $network['ipv6_pool'] = $this->firstPoolByFamily($networkPools, 'ipv6');
+            $usage = $this->networkUsage($network, $templates, $vms);
+            $bridgeName = trim((string) ($network['bridge_name'] ?? ''));
             $networkConfigs[] = [
                 'network' => $network,
                 'pools' => $networkPools,
                 'ipv4_pool' => $network['ipv4_pool'],
                 'ipv6_pool' => $network['ipv6_pool'],
+                'bridge_resource' => $bridgeName !== '' ? ($hostResourcesByName[$bridgeName] ?? null) : null,
+                'usage' => $usage,
             ];
         }
-
-        $bridgeCandidates = (new HostNetworkDiscoveryService())->detect();
 
         $this->view('dashboard', [
             'currentPage' => $currentPage,
@@ -127,5 +135,64 @@ class DashboardController extends BaseController
             }
         }
         return null;
+    }
+
+    private function networkUsage(array $network, array $templates, array $vms): array
+    {
+        $usage = [
+            'template_count' => 0,
+            'template_nics' => 0,
+            'vm_count' => 0,
+            'vm_nics' => 0,
+        ];
+
+        foreach ($templates as $template) {
+            $matched = 0;
+            foreach (($template['normalized_nics'] ?? []) as $nic) {
+                if ($this->networkMatchesNic($network, is_array($nic) ? $nic : [])) {
+                    $matched++;
+                }
+            }
+            if ($matched > 0) {
+                $usage['template_count']++;
+                $usage['template_nics'] += $matched;
+            }
+        }
+
+        foreach ($vms as $vm) {
+            $matched = 0;
+            foreach (($vm['normalized_nics'] ?? []) as $nic) {
+                if ($this->networkMatchesNic($network, is_array($nic) ? $nic : [])) {
+                    $matched++;
+                }
+            }
+            if ($matched > 0) {
+                $usage['vm_count']++;
+                $usage['vm_nics'] += $matched;
+            }
+        }
+
+        return $usage;
+    }
+
+    private function networkMatchesNic(array $network, array $nic): bool
+    {
+        $networkId = (int) ($network['id'] ?? 0);
+        $nicNetworkId = (int) ($nic['network_id'] ?? 0);
+        if ($networkId > 0 && $nicNetworkId > 0) {
+            return $networkId === $nicNetworkId;
+        }
+
+        $networkName = trim((string) ($network['name'] ?? ''));
+        $nicNetworkName = trim((string) ($nic['network_name'] ?? ''));
+        if ($networkName !== '' && $nicNetworkName !== '') {
+            return $networkName === $nicNetworkName;
+        }
+
+        $bridgeName = trim((string) ($network['bridge_name'] ?? ''));
+        return $nicNetworkId <= 0
+            && $nicNetworkName === ''
+            && $bridgeName !== ''
+            && trim((string) ($nic['bridge'] ?? '')) === $bridgeName;
     }
 }

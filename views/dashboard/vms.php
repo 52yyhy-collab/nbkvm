@@ -15,13 +15,13 @@
         <?php endforeach; ?>
       </select>
       <div class="vm-template-nics" id="vm-template-nic-summary">
-        <div class="muted">默认会继承模板里的网卡拓扑。</div>
+        <div class="muted">默认继承模板里的 net0 / net1 / ipconfig0 / ipconfig1 拓扑。</div>
       </div>
-      <label><input class="inline" type="checkbox" id="vm-custom-nics-enabled" value="1"> 创建时自定义网卡（可选）</label>
+      <label><input class="inline" type="checkbox" id="vm-custom-nics-enabled" value="1"> 创建时自定义 netX / ipconfigX（可选）</label>
       <div id="vm-custom-nics-wrap" class="hidden-block">
         <div class="section-split">
-          <label>自定义网卡</label>
-          <button class="btn secondary js-add-nic" type="button" data-editor="vm">新增网卡</button>
+          <label>自定义 netX / ipconfigX</label>
+          <button class="btn secondary js-add-nic" type="button" data-editor="vm">新增 netX</button>
         </div>
         <div class="nic-editor" id="vm-nic-editor"></div>
         <details>
@@ -41,16 +41,17 @@
     <div class="section-split">
       <div>
         <h3>编辑 VM（安全模式）</h3>
-        <p class="muted">允许改 CPU / 内存 / 到期策略；模板切换、磁盘/NIC 拓扑、名称等危险项保持锁定。</p>
+        <p class="muted">CPU / 内存 / 到期策略可改；netX / ipconfigX 仅在 VM 已关机时允许编辑。运行中的 VM 会只读展示当前网卡结构。</p>
       </div>
       <button class="btn secondary" type="button" id="vm-edit-reset">取消编辑</button>
     </div>
     <div id="vm-edit-state" class="inline-banner hidden-block"></div>
-    <div class="inline-banner warn">CPU/内存仅允许在 VM 已关机（shut off/defined）时修改；网络与磁盘拓扑请通过新模板/新 VM 迁移。</div>
+    <div id="vm-edit-locks" class="inline-banner warn hidden-block"></div>
     <form action="/vms/update" method="post" id="vm-edit-form">
       <?= csrf_field() ?>
       <input type="hidden" name="redirect_to" value="<?= e($redirectTo) ?>">
       <input type="hidden" name="id" id="vm-edit-id" value="">
+      <input type="hidden" name="vm_nics_json" id="vm-edit-nics-json" value="[]">
       <label>虚拟机</label>
       <input type="text" id="vm-edit-name" readonly placeholder="请从右侧列表点“编辑配置”">
       <label>模板</label>
@@ -66,6 +67,17 @@
       <input type="datetime-local" name="expires_at" id="vm-edit-expires-at">
       <label>到期后保留天数</label>
       <input type="number" min="0" name="expire_grace_days" id="vm-edit-expire-grace-days" value="3">
+
+      <div class="section-split top-gap">
+        <label>netX / ipconfigX</label>
+        <button class="btn secondary js-add-nic" type="button" data-editor="vm-edit">新增 netX</button>
+      </div>
+      <div class="nic-editor" id="vm-edit-nic-editor"></div>
+      <details>
+        <summary>查看生成后的 vm_nics_json</summary>
+        <textarea id="vm-edit-nics-preview" readonly></textarea>
+      </details>
+
       <div class="spacer"></div>
       <button class="btn" type="submit">保存配置</button>
     </form>
