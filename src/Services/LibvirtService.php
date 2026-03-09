@@ -43,7 +43,7 @@ class LibvirtService
     private function lookupWithConnection(string $name): array
     {
         $connection = $this->connection(false);
-        $domain = libvirt_domain_lookup_by_name($connection, $name);
+        $domain = @libvirt_domain_lookup_by_name($connection, $name);
         if ($domain === false) {
             throw new RuntimeException('查找虚拟机失败：' . $this->lastError());
         }
@@ -51,44 +51,60 @@ class LibvirtService
     }
     public function start(string $name): void
     {
-        [, $domain] = $this->lookupWithConnection($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
         if (!libvirt_domain_create($domain)) {
             throw new RuntimeException('启动虚拟机失败：' . $this->lastError());
         }
+        unset($connection);
     }
     public function shutdown(string $name): void
     {
-        [, $domain] = $this->lookupWithConnection($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
         if (!libvirt_domain_shutdown($domain)) {
             throw new RuntimeException('关机失败：' . $this->lastError());
         }
+        unset($connection);
     }
     public function suspend(string $name): void
     {
-        [, $domain] = $this->lookupWithConnection($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
         if (!libvirt_domain_suspend($domain)) {
             throw new RuntimeException('暂停失败：' . $this->lastError());
         }
+        unset($connection);
     }
     public function destroy(string $name): void
     {
-        [, $domain] = $this->lookupWithConnection($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
         if (!libvirt_domain_destroy($domain)) {
             throw new RuntimeException('强制停止失败：' . $this->lastError());
         }
+        unset($connection);
     }
     public function undefine(string $name): void
     {
-        [, $domain] = $this->lookupWithConnection($name);
+        [$connection, $domain] = $this->lookupWithConnection($name);
         if (!libvirt_domain_undefine($domain)) {
             throw new RuntimeException('取消定义失败：' . $this->lastError());
+        }
+        unset($connection);
+    }
+    public function domainExists(string $name): bool
+    {
+        try {
+            [$connection, $domain] = $this->lookupWithConnection($name);
+            unset($domain, $connection);
+            return true;
+        } catch (\Throwable) {
+            return false;
         }
     }
     public function domInfo(string $name): array
     {
         try {
-            [, $domain] = $this->lookupWithConnection($name);
+            [$connection, $domain] = $this->lookupWithConnection($name);
             $info = libvirt_domain_get_info($domain);
+            unset($connection);
             if ($info === false || !is_array($info)) {
                 return ['state' => 'unknown'];
             }

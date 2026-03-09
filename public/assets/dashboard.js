@@ -21,6 +21,8 @@
   const bridgeCandidates = Array.isArray(data.bridgeCandidates?.bridges) ? data.bridgeCandidates.bridges : [];
   const hostResources = Array.isArray(data.bridgeCandidates?.all) ? data.bridgeCandidates.all : [];
   const hostResourceMap = Object.fromEntries(hostResources.map((item) => [String(item.name), item]));
+  const nodeNetworkResources = Array.isArray(data.nodeNetworkResources) ? data.nodeNetworkResources : [];
+  const nodeNetworkCapabilities = data.nodeNetworkCapabilities && typeof data.nodeNetworkCapabilities === 'object' ? data.nodeNetworkCapabilities : {};
   const preferredBridgeName = String(data.bridgeCandidates?.preferred_bridge || '');
 
   const preferredNetwork = () => networks.find((item) => String(item.bridge_name || '') === preferredBridgeName)
@@ -46,56 +48,82 @@
     return text.replace(' ', 'T').slice(0, 16);
   };
 
+  const nodeBridgeResources = nodeNetworkResources.filter((item) => String(item.type || '').toLowerCase() === 'bridge');
+  const nodeBridgeMap = Object.fromEntries(nodeBridgeResources.map((item) => [String(item.name), item]));
+  const findNodeBridgeResource = (name) => nodeBridgeMap[String(name)] || null;
+  const compatNetworkByBridge = (bridge) => networks.find((item) => String(item.bridge_name || item.name || '') === String(bridge)) || null;
+  const compatNetworkForBinding = (binding) => binding?.network || compatNetworkByBridge(binding?.bridge_name || '') || null;
+
   function makeRawBridgeBinding(bridgeName, networkName = '') {
     const fallback = preferredNetwork();
     const bridge = String(bridgeName || '').trim() || String(fallback.bridge_name || 'vmbr0');
+    const compat = compatNetworkByBridge(bridge);
     return {
       key: `bridge:${bridge}`,
       kind: 'bridge',
       bridge_name: bridge,
-      network: null,
+      network: compat,
       network_id: '',
       network_name: String(networkName || bridge),
       source_type: 'bridge',
       source_name: bridge,
       resource: findBridgeResource(bridge),
+      node_resource: findNodeBridgeResource(bridge),
+    };
+  }
+
+  function makeLibvirtNetworkBinding(network) {
+    const bridge = String(network?.bridge_name || network?.name || '').trim();
+    return {
+      key: `network:${network.id}`,
+      kind: 'libvirt-network',
+      bridge_name: bridge,
+      network,
+      network_id: network.id,
+      network_name: String(network.name || bridge),
+      source_type: 'network',
+      source_name: String(network.name || bridge),
+      resource: findBridgeResource(bridge),
+      node_resource: findNodeBridgeResource(bridge),
     };
   }
 
   function bridgeBindings() {
     const options = [];
-    const profiledBridges = new Set();
-    const sortedNetworks = [...networks].sort((left, right) => {
-      const leftBridge = String(left.bridge_name || left.name || '');
-      const rightBridge = String(right.bridge_name || right.name || '');
-      const leftWeight = leftBridge === preferredBridgeName ? 0 : (leftBridge.startsWith('vmbr') ? 1 : 2);
-      const rightWeight = rightBridge === preferredBridgeName ? 0 : (rightBridge.startsWith('vmbr') ? 1 : 2);
-      if (leftWeight !== rightWeight) return leftWeight - rightWeight;
-      return `${leftBridge}/${left.name || ''}`.localeCompare(`${rightBridge}/${right.name || ''}`);
-    });
+    const seen = new Set();
 
-    sortedNetworks.forEach((network) => {
-      const bridge = String(network.bridge_name || network.name || '').trim();
-      if (!bridge) return;
-      profiledBridges.add(bridge);
-      options.push({
-        key: `network:${network.id}`,
-        kind: 'network',
-        bridge_name: bridge,
-        network,
-        network_id: network.id,
-        network_name: String(network.name || bridge),
-        source_type: Number(network.libvirt_managed || 0) === 1 ? 'network' : 'bridge',
-        source_name: Number(network.libvirt_managed || 0) === 1 ? String(network.name || bridge) : bridge,
-        resource: findBridgeResource(bridge),
+    [...nodeBridgeResources]
+      .sort((left, right) => {
+        const leftName = String(left.name || '');
+        const rightName = String(right.name || '');
+        const leftWeight = leftName === preferredBridgeName ? 0 : (leftName.startsWith('vmbr') ? 1 : 2);
+        const rightWeight = rightName === preferredBridgeName ? 0 : (rightName.startsWith('vmbr') ? 1 : 2);
+        if (leftWeight !== rightWeight) return leftWeight - rightWeight;
+        return leftName.localeCompare(rightName);
+      })
+      .forEach((resource) => {
+        const bridge = String(resource.name || '').trim();
+        if (!bridge || seen.has(`bridge:${bridge}`)) return;
+        options.push(makeRawBridgeBinding(bridge, bridge));
+        seen.add(`bridge:${bridge}`);
       });
-    });
 
     bridgeCandidates.forEach((resource) => {
       const bridge = String(resource.name || '').trim();
-      if (!bridge || profiledBridges.has(bridge)) return;
+      if (!bridge || seen.has(`bridge:${bridge}`)) return;
       options.push(makeRawBridgeBinding(bridge));
+      seen.add(`bridge:${bridge}`);
     });
+
+    networks
+      .filter((network) => Number(network.libvirt_managed || 0) === 1)
+      .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')))
+      .forEach((network) => {
+        const key = `network:${network.id}`;
+        if (seen.has(key)) return;
+        options.push(makeLibvirtNetworkBinding(network));
+        seen.add(key);
+      });
 
     if (!options.length) {
       options.push(makeRawBridgeBinding(preferredBridgeName || preferredNetwork().bridge_name || 'vmbr0'));
@@ -106,8 +134,9 @@
 
   function preferredBinding() {
     const options = bridgeBindings();
-    return options.find((item) => item.bridge_name === preferredBridgeName)
-      || options.find((item) => String(item.network_name || '') === 'default')
+    return options.find((item) => item.kind !== 'libvirt-network' && item.bridge_name === preferredBridgeName)
+      || options.find((item) => item.kind !== 'libvirt-network' && String(item.bridge_name || '').startsWith('vmbr'))
+      || options.find((item) => item.kind === 'libvirt-network' && String(item.network_name || '') === 'default')
       || options[0]
       || makeRawBridgeBinding(preferredBridgeName || 'vmbr0');
   }
@@ -122,19 +151,7 @@
       if (value.startsWith('bridge:')) return makeRawBridgeBinding(value.slice(7));
       if (value.startsWith('network:')) {
         const network = findNetworkById(value.slice(8));
-        if (network) {
-          return {
-            key: value,
-            kind: 'network',
-            bridge_name: String(network.bridge_name || network.name || ''),
-            network,
-            network_id: network.id,
-            network_name: String(network.name || network.bridge_name || ''),
-            source_type: Number(network.libvirt_managed || 0) === 1 ? 'network' : 'bridge',
-            source_name: Number(network.libvirt_managed || 0) === 1 ? String(network.name || network.bridge_name || '') : String(network.bridge_name || network.name || ''),
-            resource: findBridgeResource(String(network.bridge_name || network.name || '')),
-          };
-        }
+        if (network) return makeLibvirtNetworkBinding(network);
       }
       return null;
     };
@@ -152,35 +169,37 @@
       const bridge = String(valueOrNic.bridge || valueOrNic.bridge_name || '').trim();
       const networkName = String(valueOrNic.network_name || valueOrNic.name || '').trim();
       if (bridge) {
-        const profileHit = options.find((item) => item.network && item.bridge_name === bridge && item.network_name === networkName);
-        if (profileHit) return profileHit;
-        const bridgeHit = options.find((item) => item.bridge_name === bridge && (!item.network || item.network_name === networkName || !networkName));
+        const bridgeHit = options.find((item) => item.kind !== 'libvirt-network' && item.bridge_name === bridge);
         if (bridgeHit) return bridgeHit;
         return makeRawBridgeBinding(bridge, networkName);
       }
 
       if (networkName) {
         const network = findNetworkByName(networkName);
-        if (network) return fromKey(`network:${network.id}`) || preferredBinding();
-        return makeRawBridgeBinding(networkName, networkName);
+        if (network && Number(network.libvirt_managed || 0) === 1) {
+          return fromKey(`network:${network.id}`) || preferredBinding();
+        }
+        if (findNodeBridgeResource(networkName) || findBridgeResource(networkName)) {
+          return makeRawBridgeBinding(networkName, networkName);
+        }
       }
     }
 
     return preferredBinding();
   }
 
-  const modelOptionsHtml = (selected) => modelOptions.map((model) => `<option value="${model}" ${String(model) === String(selected) ? 'selected' : ''}>${model}</option>`).join('');
-  const modeOptionsHtml = (options, selected) => options.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
-  const diskBusOptionsHtml = (selected) => diskBusOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
-  const diskFormatOptionsHtml = (selected) => diskFormatOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
-
   function bindingLabel(binding) {
+    if (binding.kind === 'libvirt-network') {
+      return `${binding.network_name || binding.source_name || '-'} / managed libvirt network / ${binding.bridge_name || '-'}`;
+    }
     const parts = [binding.bridge_name || '-'];
-    if (binding.network) {
-      parts.push(`profile ${binding.network_name || binding.bridge_name || '-'}`);
-      parts.push(Number(binding.network.libvirt_managed || 0) === 1 ? 'managed' : 'bridge');
+    if (binding.node_resource) {
+      parts.push('Linux Bridge');
+      if (binding.node_resource.cidr) parts.push(String(binding.node_resource.cidr));
+    } else if (binding.resource) {
+      parts.push('Host Bridge');
     } else {
-      parts.push('仅宿主 bridge');
+      parts.push('Bridge');
     }
     return parts.join(' / ');
   }
@@ -195,7 +214,7 @@
 
   function defaultNic(bindingOrNetwork = preferredBinding()) {
     const binding = resolveBinding(bindingOrNetwork);
-    const network = binding.network;
+    const compatNetwork = compatNetworkForBinding(binding);
     return {
       network_id: binding.network_id || '',
       network_name: binding.network_name || binding.bridge_name || '',
@@ -212,7 +231,7 @@
       ipv4_prefix_length: '',
       ipv4_gateway: '',
       ipv4_dns_servers: '',
-      ipv6_mode: network?.ipv6_pool || network?.ipv6_cidr ? 'auto' : 'none',
+      ipv6_mode: compatNetwork?.ipv6_pool || compatNetwork?.ipv6_cidr || binding.node_resource?.ipv6_cidr ? 'auto' : 'none',
       ipv6_address: '',
       ipv6_prefix_length: '',
       ipv6_gateway: '',
@@ -237,26 +256,81 @@
   }
 
   function nicPoolHint(binding, family) {
-    const network = binding.network;
+    const network = compatNetworkForBinding(binding);
     if (!network) {
-      return '当前 Bridge 仅有宿主资源，没有关联 Profile；pool 模式不可用。';
+      return family === 'ipv6'
+        ? '当前 Bridge 没有关联默认 IPv6 池；如需 pool，可在兼容层补充。'
+        : '当前 Bridge 没有关联默认 IPv4 池；如需 pool，可在兼容层补充。';
     }
     const pool = family === 'ipv6' ? network.ipv6_pool : network.ipv4_pool;
     if (!pool) {
-      return family === 'ipv6' ? '当前 Profile 未配置 IPv6 默认池。' : '当前 Profile 未配置 IPv4 默认池。';
+      return family === 'ipv6' ? '兼容层未配置 IPv6 默认池。' : '兼容层未配置 IPv4 默认池。';
     }
     return `${pool.start_ip} - ${pool.end_ip}${pool.dns_servers ? ` / DNS ${pool.dns_servers}` : ''}`;
   }
 
   function bindingHint(binding) {
     const resource = binding.resource || findBridgeResource(binding.bridge_name);
-    const parts = [`Bridge ${binding.bridge_name || '-'}`];
-    parts.push(binding.network ? `Profile ${binding.network_name || '-'}` : '未建 Profile');
-    if (binding.network) parts.push(Number(binding.network.libvirt_managed || 0) === 1 ? 'managed' : 'bridge');
+    const compat = compatNetworkForBinding(binding);
+    const parts = [`bridge=${binding.bridge_name || '-'}`];
+    parts.push(binding.kind === 'libvirt-network' ? `source=network:${binding.network_name || binding.source_name || '-'}` : 'source=bridge');
+    if (binding.node_resource?.cidr) parts.push(`IPv4 ${binding.node_resource.cidr}`);
+    else if (compat?.cidr) parts.push(`IPv4 ${compat.cidr}`);
+    if (binding.node_resource?.ipv6_cidr) parts.push(`IPv6 ${binding.node_resource.ipv6_cidr}`);
+    else if (compat?.ipv6_cidr) parts.push(`IPv6 ${compat.ipv6_cidr}`);
     if (resource?.state) parts.push(`state ${resource.state}`);
     if (resource?.mtu) parts.push(`mtu ${resource.mtu}`);
     if (Array.isArray(resource?.ports) && resource.ports.length) parts.push(`ports ${resource.ports.join(', ')}`);
     return parts.join(' / ');
+  }
+
+  const modelOptionsHtml = (selected) => modelOptions.map((model) => `<option value="${model}" ${String(model) === String(selected) ? 'selected' : ''}>${model}</option>`).join('');
+  const modeOptionsHtml = (options, selected) => options.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
+  const diskBusOptionsHtml = (selected) => diskBusOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
+  const diskFormatOptionsHtml = (selected) => diskFormatOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
+  const ipv4ModeOptionsHtml = (selected) => [
+    ['dhcp', 'dhcp'],
+    ['static', 'static'],
+    ['pool', 'pool（高级兼容）'],
+    ['none', 'none'],
+  ].map(([value, label]) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${label}</option>`).join('');
+  const ipv6ModeOptionsHtml = (selected) => [
+    ['auto', 'auto'],
+    ['static', 'static'],
+    ['pool', 'pool（高级兼容）'],
+    ['none', 'none'],
+  ].map(([value, label]) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${label}</option>`).join('');
+
+  function netPreviewText(binding, item) {
+    const parts = [`${item.model || 'virtio'}`];
+    if (item.mac) parts.push(`macaddr=${item.mac}`);
+    parts.push(`bridge=${binding.bridge_name || '-'}`);
+    if (item.vlan_tag) parts.push(`tag=${item.vlan_tag}`);
+    parts.push(`firewall=${item.firewall ? 1 : 0}`);
+    parts.push(`link_down=${item.link_down ? 1 : 0}`);
+    return parts.join(',');
+  }
+
+  function ipconfigPreviewText(item) {
+    const ipv4 = (() => {
+      if (item.ipv4_mode === 'static') {
+        const base = item.ipv4_address && item.ipv4_prefix_length ? `${item.ipv4_address}/${item.ipv4_prefix_length}` : 'manual';
+        return `ip=${base}${item.ipv4_gateway ? `,gw=${item.ipv4_gateway}` : ''}`;
+      }
+      if (item.ipv4_mode === 'pool') return 'ip=pool';
+      if (item.ipv4_mode === 'none') return 'ip=none';
+      return 'ip=dhcp';
+    })();
+    const ipv6 = (() => {
+      if (item.ipv6_mode === 'static') {
+        const base = item.ipv6_address && item.ipv6_prefix_length ? `${item.ipv6_address}/${item.ipv6_prefix_length}` : 'manual';
+        return `ip6=${base}${item.ipv6_gateway ? `,gw6=${item.ipv6_gateway}` : ''}`;
+      }
+      if (item.ipv6_mode === 'pool') return 'ip6=pool';
+      if (item.ipv6_mode === 'none') return 'ip6=none';
+      return 'ip6=auto';
+    })();
+    return `${ipv4}, ${ipv6}`;
   }
 
   function renderNicCard(nic, index) {
@@ -271,6 +345,8 @@
           </div>
           <button class="btn danger js-remove-nic" type="button">删除</button>
         </div>
+        <div class="field-note nic-pve-net-preview">${escapeHtml(netPreviewText(binding, item))}</div>
+        <div class="field-note nic-pve-ip-preview">${escapeHtml(ipconfigPreviewText(item))}</div>
         <div class="row-3">
           <div>
             <label>Bridge</label>
@@ -288,9 +364,9 @@
         <div class="nic-ip-block">
           <div class="muted editor-kicker">ipconfig${index} / IPv4</div>
           <div class="row-3">
-            <div><label>IPv4 模式</label><select data-field="ipv4_mode">${modeOptionsHtml(['dhcp', 'static', 'pool', 'none'], item.ipv4_mode || 'dhcp')}</select></div>
-            <div class="nic-mode-panel" data-mode-panel="ipv4-pool"><label>IPv4 默认池</label><div class="field-note nic-ipv4-pool-hint">${escapeHtml(nicPoolHint(binding, 'ipv4'))}</div></div>
-            <div class="nic-mode-panel" data-mode-panel="ipv4-dhcp"><label>DHCP</label><div class="field-note">由所选 Bridge Profile / 来宾系统按 DHCP 获取 IPv4。</div></div>
+            <div><label>IPv4 模式</label><select data-field="ipv4_mode">${ipv4ModeOptionsHtml(item.ipv4_mode || 'dhcp')}</select></div>
+            <div class="nic-mode-panel" data-mode-panel="ipv4-pool"><label>IPv4 默认池（高级兼容）</label><div class="field-note nic-ipv4-pool-hint">${escapeHtml(nicPoolHint(binding, 'ipv4'))}</div></div>
+            <div class="nic-mode-panel" data-mode-panel="ipv4-dhcp"><label>DHCP</label><div class="field-note">按 PVE 思路由所选 Bridge 所在网络环境 / 来宾系统获取 IPv4。</div></div>
           </div>
           <div class="row-3 nic-static-fields" data-mode-panel="ipv4-static">
             <div><label>IPv4 地址</label><input type="text" data-field="ipv4_address" value="${escapeHtml(item.ipv4_address || '')}" placeholder="10.0.10.20"></div>
@@ -304,9 +380,9 @@
         <div class="nic-ip-block">
           <div class="muted editor-kicker">ipconfig${index} / IPv6</div>
           <div class="row-3">
-            <div><label>IPv6 模式</label><select data-field="ipv6_mode">${modeOptionsHtml(['auto', 'static', 'pool', 'none'], item.ipv6_mode || 'none')}</select></div>
-            <div class="nic-mode-panel" data-mode-panel="ipv6-pool"><label>IPv6 默认池</label><div class="field-note nic-ipv6-pool-hint">${escapeHtml(nicPoolHint(binding, 'ipv6'))}</div></div>
-            <div class="nic-mode-panel" data-mode-panel="ipv6-auto"><label>IPv6 自动配置</label><div class="field-note">根据所选 Profile 的 IPv6 子网 / RA / 来宾系统自动配置。</div></div>
+            <div><label>IPv6 模式</label><select data-field="ipv6_mode">${ipv6ModeOptionsHtml(item.ipv6_mode || 'none')}</select></div>
+            <div class="nic-mode-panel" data-mode-panel="ipv6-pool"><label>IPv6 默认池（高级兼容）</label><div class="field-note nic-ipv6-pool-hint">${escapeHtml(nicPoolHint(binding, 'ipv6'))}</div></div>
+            <div class="nic-mode-panel" data-mode-panel="ipv6-auto"><label>IPv6 自动配置</label><div class="field-note">按 ipconfigX 心智由来宾系统 / RA / cloud-init 自动配置。</div></div>
           </div>
           <div class="row-3 nic-static-fields" data-mode-panel="ipv6-static">
             <div><label>IPv6 地址</label><input type="text" data-field="ipv6_address" value="${escapeHtml(item.ipv6_address || '')}" placeholder="fd00:10::20"></div>
@@ -355,7 +431,8 @@
       hint.textContent = bindingHint(binding);
     }
 
-    if (!binding.network) {
+    const compatNetwork = compatNetworkForBinding(binding);
+    if (!compatNetwork) {
       const ipv4ModeNode = card.querySelector('[data-field="ipv4_mode"]');
       const ipv6ModeNode = card.querySelector('[data-field="ipv6_mode"]');
       if (ipv4ModeNode && ipv4ModeNode.value === 'pool') ipv4ModeNode.value = 'dhcp';
@@ -367,8 +444,28 @@
     if (ipv4PoolHint) ipv4PoolHint.textContent = nicPoolHint(binding, 'ipv4');
     if (ipv6PoolHint) ipv6PoolHint.textContent = nicPoolHint(binding, 'ipv6');
 
-    const ipv4Mode = card.querySelector('[data-field="ipv4_mode"]').value;
-    const ipv6Mode = card.querySelector('[data-field="ipv6_mode"]').value;
+    const item = {
+      model: card.querySelector('[data-field="model"]').value || 'virtio',
+      mac: card.querySelector('[data-field="mac"]').value.trim(),
+      vlan_tag: card.querySelector('[data-field="vlan_tag"]').value || '',
+      firewall: card.querySelector('[data-field="firewall"]').checked,
+      link_down: card.querySelector('[data-field="link_down"]').checked,
+      ipv4_mode: card.querySelector('[data-field="ipv4_mode"]').value || 'dhcp',
+      ipv4_address: card.querySelector('[data-field="ipv4_address"]').value.trim(),
+      ipv4_prefix_length: card.querySelector('[data-field="ipv4_prefix_length"]').value || '',
+      ipv4_gateway: card.querySelector('[data-field="ipv4_gateway"]').value.trim(),
+      ipv6_mode: card.querySelector('[data-field="ipv6_mode"]').value || 'none',
+      ipv6_address: card.querySelector('[data-field="ipv6_address"]').value.trim(),
+      ipv6_prefix_length: card.querySelector('[data-field="ipv6_prefix_length"]').value || '',
+      ipv6_gateway: card.querySelector('[data-field="ipv6_gateway"]').value.trim(),
+    };
+    const netPreview = card.querySelector('.nic-pve-net-preview');
+    const ipPreview = card.querySelector('.nic-pve-ip-preview');
+    if (netPreview) netPreview.textContent = netPreviewText(binding, item);
+    if (ipPreview) ipPreview.textContent = ipconfigPreviewText(item);
+
+    const ipv4Mode = item.ipv4_mode;
+    const ipv6Mode = item.ipv6_mode;
     const toggle = (selector, visible) => card.querySelectorAll(selector).forEach((node) => { node.style.display = visible ? '' : 'none'; });
     toggle('[data-mode-panel="ipv4-static"]', ipv4Mode === 'static');
     toggle('[data-mode-panel="ipv4-static-dns"]', ipv4Mode === 'static');
@@ -551,6 +648,95 @@
   }
 
   function initNetworkPage() {
+    const nodeForm = document.getElementById('node-resource-form');
+    if (nodeForm) {
+      const typeNode = document.getElementById('node-resource-type');
+      const editState = document.getElementById('node-resource-edit-state');
+      const portsWrap = document.querySelector('[data-node-field="ports"]');
+      const portsLabel = document.getElementById('node-resource-ports-label');
+      const bondModeWrap = document.querySelector('[data-node-field="bond-mode"]');
+      const parentWrap = document.querySelector('[data-node-field="parent"]');
+      const vlanIdWrap = document.querySelector('[data-node-field="vlan-id"]');
+      const bridgeVlanAwareWrap = document.querySelector('[data-node-field="bridge-vlan-aware"]');
+
+      const toggleNodeField = (node, visible) => {
+        if (!node) return;
+        node.style.display = visible ? '' : 'none';
+      };
+
+      const syncNodeType = () => {
+        const type = String(typeNode?.value || 'bridge');
+        toggleNodeField(portsWrap, type !== 'vlan');
+        toggleNodeField(bondModeWrap, type === 'bond');
+        toggleNodeField(parentWrap, type === 'vlan');
+        toggleNodeField(vlanIdWrap, type === 'vlan');
+        toggleNodeField(bridgeVlanAwareWrap, type === 'bridge');
+        if (portsLabel) {
+          portsLabel.textContent = type === 'bond' ? 'Bond Slaves' : 'Bridge Ports';
+        }
+      };
+
+      const resetNodeForm = () => {
+        nodeForm.reset();
+        document.getElementById('node-resource-id').value = '';
+        document.getElementById('node-resource-name').value = '';
+        document.getElementById('node-resource-type').value = 'bridge';
+        document.getElementById('node-resource-ports').value = '';
+        document.getElementById('node-resource-parent').value = '';
+        document.getElementById('node-resource-vlan-id').value = '';
+        document.getElementById('node-resource-bond-mode').value = 'active-backup';
+        document.getElementById('node-resource-bridge-vlan-aware').checked = false;
+        document.getElementById('node-resource-cidr').value = '';
+        document.getElementById('node-resource-gateway').value = '';
+        document.getElementById('node-resource-ipv6-cidr').value = '';
+        document.getElementById('node-resource-ipv6-gateway').value = '';
+        document.getElementById('node-resource-mtu').value = '';
+        document.getElementById('node-resource-autostart').checked = false;
+        document.getElementById('node-resource-comments').value = '';
+        editState.classList.add('hidden-block');
+        editState.textContent = '';
+        syncNodeType();
+      };
+
+      const applyNodeResource = (item, label = '编辑节点网络对象') => {
+        document.getElementById('node-resource-id').value = item.id || '';
+        document.getElementById('node-resource-name').value = item.name || '';
+        document.getElementById('node-resource-type').value = item.type || 'bridge';
+        document.getElementById('node-resource-ports').value = item.ports_text || '';
+        document.getElementById('node-resource-parent').value = item.parent || '';
+        document.getElementById('node-resource-vlan-id').value = item.vlan_id || '';
+        document.getElementById('node-resource-bond-mode').value = item.bond_mode || 'active-backup';
+        document.getElementById('node-resource-bridge-vlan-aware').checked = Number(item.bridge_vlan_aware || 0) === 1;
+        document.getElementById('node-resource-cidr').value = item.cidr || '';
+        document.getElementById('node-resource-gateway').value = item.gateway || '';
+        document.getElementById('node-resource-ipv6-cidr').value = item.ipv6_cidr || '';
+        document.getElementById('node-resource-ipv6-gateway').value = item.ipv6_gateway || '';
+        document.getElementById('node-resource-mtu').value = item.mtu || '';
+        document.getElementById('node-resource-autostart').checked = Number(item.autostart || 0) === 1;
+        document.getElementById('node-resource-comments').value = item.comments || '';
+        editState.textContent = `${label}：${item.name || ''}`;
+        editState.classList.remove('hidden-block');
+        syncNodeType();
+        nodeForm.scrollIntoView({behavior: 'smooth', block: 'start'});
+      };
+
+      document.getElementById('node-resource-form-reset')?.addEventListener('click', resetNodeForm);
+      typeNode?.addEventListener('change', syncNodeType);
+      document.querySelectorAll('.js-import-node-resource').forEach((button) => {
+        button.addEventListener('click', () => {
+          const item = JSON.parse(button.dataset.resource || '{}');
+          applyNodeResource(item, '导入宿主对象到候选层');
+        });
+      });
+      document.querySelectorAll('.js-edit-node-resource').forEach((button) => {
+        button.addEventListener('click', () => {
+          const item = JSON.parse(button.dataset.resource || '{}');
+          applyNodeResource(item, `编辑节点网络对象 #${item.id || ''}`);
+        });
+      });
+      resetNodeForm();
+    }
+
     const form = document.getElementById('network-form');
     if (!form) return;
 
@@ -662,7 +848,7 @@
         document.getElementById('network-ipv6-pool-start').value = item.ipv6_pool?.start_ip || '';
         document.getElementById('network-ipv6-pool-end').value = item.ipv6_pool?.end_ip || '';
         document.getElementById('network-ipv6-pool-dns').value = item.ipv6_pool?.dns_servers || '';
-        editState.textContent = `编辑 Bridge Profile #${item.id}：${item.name}`;
+        editState.textContent = `编辑兼容项 #${item.id}：${item.name}`;
         editState.classList.remove('hidden-block');
         if (poolPanel) {
           poolPanel.open = Boolean(item.ipv4_pool?.start_ip || item.ipv6_pool?.start_ip);
@@ -799,8 +985,9 @@
       return;
     }
     target.innerHTML = template.nics.map((nic, index) => {
-      const binding = resolveBinding(nic);
-      return `<div class="muted">net${index}: ${escapeHtml(binding.bridge_name || binding.network_name || '-')} / ${escapeHtml(nic.model || 'virtio')} / tag ${escapeHtml(nic.vlan_tag || '-')} / IPv4 ${escapeHtml(nic.ipv4_mode || 'dhcp')} / IPv6 ${escapeHtml(nic.ipv6_mode || 'none')}</div>`;
+      const item = normalizeNic(nic);
+      const binding = resolveBinding(item);
+      return `<div class="muted">net${index}: ${escapeHtml(netPreviewText(binding, item))} / ipconfig${index}: ${escapeHtml(ipconfigPreviewText(item))}</div>`;
     }).join('');
   }
 

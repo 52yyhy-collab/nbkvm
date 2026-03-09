@@ -31,6 +31,11 @@ class VmService
             throw new RuntimeException('虚拟机名称已存在。');
         }
 
+        $libvirt = new LibvirtService();
+        if ($libvirt->domainExists($name)) {
+            throw new RuntimeException('libvirt 中已存在同名虚拟机定义，请先清理现有 domain。');
+        }
+
         $image = (new ImageRepository())->find((int) $template['image_id']);
         if (!$image) {
             throw new RuntimeException('模板关联镜像不存在。');
@@ -64,8 +69,8 @@ class VmService
         $diskEntries = [];
         $nicConfigs = [];
         $vmId = null;
+        $domainDefined = false;
 
-        $libvirt = new LibvirtService();
         try {
             foreach (array_values($disks) as $index => $disk) {
                 if (!is_array($disk)) {
@@ -177,6 +182,7 @@ class VmService
             file_put_contents($xmlPath, $xml);
             @chmod($xmlPath, 0644);
             $libvirt->define($xml);
+            $domainDefined = true;
 
             $vmRepository->updateProvisioningData($vmId, $cloudInitIsoPath, $vm['ip_address'], $nicConfigs);
             $vmRepository->updateStatus($vmId, 'defined', $vm['ip_address'], null);
@@ -195,6 +201,16 @@ class VmService
 
             return $vmId;
         } catch (\Throwable $e) {
+            if ($domainDefined || $libvirt->domainExists($name)) {
+                try {
+                    $libvirt->destroy($name);
+                } catch (\Throwable) {
+                }
+                try {
+                    $libvirt->undefine($name);
+                } catch (\Throwable) {
+                }
+            }
             if ($vmId !== null) {
                 try {
                     (new IpPoolService())->releaseByVmId($vmId);

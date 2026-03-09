@@ -85,7 +85,7 @@
             <button class="btn secondary js-add-nic" type="button" data-editor="template">新增 netX</button>
           </div>
           <div class="nic-editor" id="template-nic-editor"></div>
-          <p class="muted">每张卡片就是一块 PVE 风格 netX：Bridge / VLAN Tag / Model / firewall / link_down / MAC；卡片下半部分对应 ipconfigX，用于选择 DHCP / static / auto / pool。</p>
+          <p class="muted">每张卡片就是一块 PVE 风格 netX：bridge / tag / model / firewall / link_down / macaddr；卡片下半部分对应 ipconfigX，主流程是 DHCP / static / auto，pool 已降级为高级兼容选项。</p>
           <details>
             <summary>查看生成后的 nics_json</summary>
             <textarea id="template-nics-preview" readonly></textarea>

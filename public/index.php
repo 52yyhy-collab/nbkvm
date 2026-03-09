@@ -18,6 +18,7 @@ use Nbkvm\Controllers\ImageController;
 use Nbkvm\Controllers\ImageConvertController;
 use Nbkvm\Controllers\IpPoolController;
 use Nbkvm\Controllers\NetworkController;
+use Nbkvm\Controllers\NodeNetworkResourceController;
 use Nbkvm\Controllers\NoVncController;
 use Nbkvm\Controllers\SettingController;
 use Nbkvm\Controllers\SnapshotController;
@@ -57,6 +58,10 @@ $router->post('/images/convert', [ImageConvertController::class, 'convert']);
 
 $router->post('/networks', [NetworkController::class, 'store']);
 $router->post('/networks/delete', [NetworkController::class, 'delete']);
+$router->post('/node-network-resources', [NodeNetworkResourceController::class, 'store']);
+$router->post('/node-network-resources/apply', [NodeNetworkResourceController::class, 'apply']);
+$router->post('/node-network-resources/remove-host', [NodeNetworkResourceController::class, 'removeHost']);
+$router->post('/node-network-resources/delete', [NodeNetworkResourceController::class, 'delete']);
 $router->post('/ip-pools', [IpPoolController::class, 'store']);
 $router->post('/ip-pools/delete', [IpPoolController::class, 'delete']);
 

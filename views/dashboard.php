@@ -9,7 +9,7 @@ $pageLabels = [
 ];
 $pageDescriptions = [
     'overview' => '环境、任务、审计与资源概览',
-    'networks' => '节点网络资源、Bridge Profile 与默认 IP 池',
+    'networks' => 'PVE 节点网络对象（Bridge / Bond / VLAN）与兼容层',
     'templates' => '镜像、CPU、内存、磁盘、netX/ipconfigX 模板编排',
     'vms' => '创建虚拟机、编辑 netX/ipconfigX、运行控制台与安全更新',
     'images' => '镜像上传、转换与清理',
@@ -20,17 +20,16 @@ $encodeJson = static fn (mixed $value): string => (string) json_encode($value, J
 $nicSummary = static function (array $nic): string {
     $bridge = (string) ($nic['bridge'] ?? $nic['network_name'] ?? '-');
     $model = (string) ($nic['model'] ?? 'virtio');
-    $parts = ['bridge=' . $bridge, 'model=' . $model];
+    $parts = [$model, 'bridge=' . $bridge];
     if (($nic['vlan_tag'] ?? null) !== null && (string) ($nic['vlan_tag'] ?? '') !== '') {
         $parts[] = 'tag=' . $nic['vlan_tag'];
     }
-    if (!empty($nic['firewall'])) {
-        $parts[] = 'firewall=1';
+    if (!empty($nic['mac'])) {
+        $parts[] = 'macaddr=' . (string) $nic['mac'];
     }
-    if (!empty($nic['link_down'])) {
-        $parts[] = 'link_down=1';
-    }
-    $parts[] = 'ip4=' . (string) ($nic['ipv4_mode'] ?? 'dhcp');
+    $parts[] = 'firewall=' . (!empty($nic['firewall']) ? '1' : '0');
+    $parts[] = 'link_down=' . (!empty($nic['link_down']) ? '1' : '0');
+    $parts[] = 'ip=' . (string) ($nic['ipv4_mode'] ?? 'dhcp');
     $parts[] = 'ip6=' . (string) ($nic['ipv6_mode'] ?? 'none');
     return implode(', ', $parts);
 };
@@ -112,6 +111,25 @@ $dashboardJson = [
         'nics' => array_values($vm['normalized_nics'] ?? []),
     ], $vms),
     'bridgeCandidates' => $bridgeCandidates,
+    'nodeNetworkResources' => array_map(static fn (array $resource): array => [
+        'id' => (int) ($resource['id'] ?? 0),
+        'name' => (string) ($resource['name'] ?? ''),
+        'type' => (string) ($resource['type'] ?? 'bridge'),
+        'parent' => (string) ($resource['parent'] ?? ''),
+        'ports_text' => (string) ($resource['ports_text'] ?? ''),
+        'vlan_id' => $resource['vlan_id'] ?? null,
+        'bond_mode' => (string) ($resource['bond_mode'] ?? ''),
+        'bridge_vlan_aware' => (int) ($resource['bridge_vlan_aware'] ?? 0),
+        'cidr' => (string) ($resource['cidr'] ?? ''),
+        'gateway' => (string) ($resource['gateway'] ?? ''),
+        'ipv6_cidr' => (string) ($resource['ipv6_cidr'] ?? ''),
+        'ipv6_gateway' => (string) ($resource['ipv6_gateway'] ?? ''),
+        'mtu' => $resource['mtu'] ?? null,
+        'autostart' => (int) ($resource['autostart'] ?? 0),
+        'comments' => (string) ($resource['comments'] ?? ''),
+        'managed_on_host' => (int) ($resource['managed_on_host'] ?? 0),
+    ], $nodeNetworkResources ?? []),
+    'nodeNetworkCapabilities' => $nodeNetworkCapabilities ?? [],
 ];
 ?>
 <div class="dashboard-shell">

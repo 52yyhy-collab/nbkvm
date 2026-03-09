@@ -6,6 +6,7 @@ namespace Nbkvm\Services;
 
 use Nbkvm\Repositories\IpPoolRepository;
 use Nbkvm\Repositories\NetworkRepository;
+use Nbkvm\Repositories\NodeNetworkResourceRepository;
 use PDO;
 use RuntimeException;
 
@@ -18,6 +19,7 @@ class NicConfigService
     private array $networkCacheById = [];
     private array $networkCacheByName = [];
     private array $networkCacheByBridge = [];
+    private array $nodeResourceCacheByName = [];
     private array $poolCacheById = [];
 
     public function normalizeTemplateInput(array $data, string $fallbackNetwork): array
@@ -371,35 +373,38 @@ class NicConfigService
     private function resolveNetwork(array $rawNic, string $fallbackNetwork, bool $strict): ?array
     {
         $networkId = $this->nullableInt($rawNic['network_id'] ?? null);
+        $networkName = trim((string) ($rawNic['network_name'] ?? ''));
+        $bridge = trim((string) ($rawNic['bridge'] ?? ''));
+        $fallback = trim($fallbackNetwork);
+
+        $network = null;
         if ($networkId !== null) {
             $network = $this->findNetworkById($networkId);
-            if ($network !== null) {
-                return $network;
-            }
         }
-
-        $networkName = trim((string) ($rawNic['network_name'] ?? ''));
-        if ($networkName !== '') {
+        if ($network === null && $networkName !== '') {
             $network = $this->findNetworkByName($networkName);
-            if ($network !== null) {
-                return $network;
-            }
         }
-
-        $bridge = trim((string) ($rawNic['bridge'] ?? ''));
-        if ($bridge !== '') {
+        if ($network === null && $bridge !== '') {
             $network = $this->findNetworkByBridge($bridge);
-            if ($network !== null) {
-                return $network;
+        }
+        if ($network === null && $fallback !== '') {
+            $network = $this->findNetworkByName($fallback);
+        }
+
+        $nodeResource = null;
+        foreach ([$bridge, $networkName, $fallback, (string) ($network['bridge_name'] ?? ''), (string) ($network['name'] ?? '')] as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate === '') {
+                continue;
+            }
+            $nodeResource = $this->findNodeResourceByName($candidate);
+            if ($nodeResource !== null) {
+                break;
             }
         }
 
-        $fallback = trim($fallbackNetwork);
-        if ($fallback !== '') {
-            $network = $this->findNetworkByName($fallback);
-            if ($network !== null) {
-                return $network;
-            }
+        if ($network !== null || $nodeResource !== null) {
+            return $this->mergeNetworkContext($network, $nodeResource, $networkId, $networkName, $bridge, $fallback);
         }
 
         if ($bridge !== '') {
@@ -620,5 +625,46 @@ class NicConfigService
         if (!empty($network['bridge_name'])) {
             $this->networkCacheByBridge[(string) $network['bridge_name']] = $network;
         }
+    }
+
+    private function findNodeResourceByName(string $name): ?array
+    {
+        if ($name === '') {
+            return null;
+        }
+        if (array_key_exists($name, $this->nodeResourceCacheByName)) {
+            return $this->nodeResourceCacheByName[$name];
+        }
+        $resource = (new NodeNetworkResourceRepository($this->pdo))->findByName($name);
+        $this->nodeResourceCacheByName[$name] = $resource ?: null;
+        return $resource ?: null;
+    }
+
+    private function mergeNetworkContext(?array $network, ?array $nodeResource, ?int $requestedNetworkId, string $requestedNetworkName, string $requestedBridge, string $fallback): array
+    {
+        $bridge = trim((string) ($requestedBridge ?: ($network['bridge_name'] ?? ($nodeResource['name'] ?? ''))));
+        $name = trim((string) ($requestedNetworkName ?: ($network['name'] ?? ($nodeResource['name'] ?? $bridge))));
+        if ($name === '') {
+            $name = $bridge !== '' ? $bridge : ($fallback !== '' ? $fallback : 'unknown-network');
+        }
+        if ($bridge === '') {
+            $bridge = trim((string) (($network['bridge_name'] ?? '') ?: ($nodeResource['name'] ?? $name)));
+        }
+
+        $cidr = trim((string) (($nodeResource['cidr'] ?? '') ?: ($network['cidr'] ?? '')));
+        $gateway = trim((string) (($nodeResource['gateway'] ?? '') ?: ($network['gateway'] ?? '')));
+        $ipv6Cidr = trim((string) (($nodeResource['ipv6_cidr'] ?? '') ?: ($network['ipv6_cidr'] ?? '')));
+        $ipv6Gateway = trim((string) (($nodeResource['ipv6_gateway'] ?? '') ?: ($network['ipv6_gateway'] ?? '')));
+
+        return [
+            'id' => $network['id'] ?? $requestedNetworkId,
+            'name' => $name,
+            'bridge_name' => $bridge,
+            'libvirt_managed' => (int) ($network['libvirt_managed'] ?? 0),
+            'cidr' => $cidr,
+            'gateway' => $gateway !== '' ? $gateway : null,
+            'ipv6_cidr' => $ipv6Cidr,
+            'ipv6_gateway' => $ipv6Gateway !== '' ? $ipv6Gateway : null,
+        ];
     }
 }

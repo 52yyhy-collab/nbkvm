@@ -19,6 +19,7 @@ use Nbkvm\Services\DiskConfigService;
 use Nbkvm\Services\EnvironmentCheckService;
 use Nbkvm\Services\HostNetworkDiscoveryService;
 use Nbkvm\Services\NicConfigService;
+use Nbkvm\Services\NodeNetworkResourceService;
 use Nbkvm\Services\NoVncService;
 use Nbkvm\Services\SerialConsoleService;
 use Nbkvm\Services\VmService;
@@ -73,6 +74,9 @@ class DashboardController extends BaseController
         $networks = $networkRepo->all();
         $pools = $poolRepo->all();
         $bridgeCandidates = (new HostNetworkDiscoveryService())->detect();
+        $nodeNetworkService = new NodeNetworkResourceService();
+        $nodeNetworkCapabilities = $nodeNetworkService->capabilities();
+        $nodeNetworkResources = $nodeNetworkService->listDetailed();
         $hostResourcesByName = [];
         foreach (($bridgeCandidates['all'] ?? []) as $resource) {
             $hostResourcesByName[(string) ($resource['name'] ?? '')] = $resource;
@@ -119,6 +123,8 @@ class DashboardController extends BaseController
             'jobs' => (new JobRepository())->latest(20),
             'envChecks' => (new EnvironmentCheckService())->report(),
             'bridgeCandidates' => $bridgeCandidates,
+            'nodeNetworkResources' => $nodeNetworkResources,
+            'nodeNetworkCapabilities' => $nodeNetworkCapabilities,
             'libvirtAvailable' => function_exists('libvirt_connect'),
             'authUser' => auth_user(),
             'novncBaseUrl' => (string) config('novnc.base_url'),
