@@ -47,6 +47,8 @@ class VmService
         $cpuThreads = max(1, (int) ($template['cpu_threads'] ?? 1));
         $memoryMb = max(256, (int) ($template['memory_mb'] ?? 2048));
         $cloudInitEnabled = (int) ($template['cloud_init_enabled'] ?? 0) === 1;
+        $cloudInitOverrides = $this->cloudInitOverridePayload($data, null);
+        $cloudInitConfig = $this->effectiveCloudInitConfig($template, $cloudInitOverrides, $name);
 
         if (($image['extension'] ?? '') === 'iso' && $cloudInitEnabled) {
             throw new RuntimeException('ISO 模板不支持 cloud-init 自动注入。');
@@ -95,6 +97,10 @@ class VmService
                     'size_gb' => $sizeGb,
                     'bus' => $bus,
                     'format' => $format,
+                    'storage' => $disk['storage'] ?? null,
+                    'ssd_emulation' => !empty($disk['ssd_emulation']),
+                    'discard' => (string) ($disk['discard'] ?? 'ignore'),
+                    'cache' => (string) ($disk['cache'] ?? 'default'),
                     'is_primary' => $index === 0,
                 ];
             }
@@ -123,6 +129,13 @@ class VmService
                 'ip_address' => null,
                 'xml_path' => $xmlPath,
                 'cloud_init_iso_path' => null,
+                'cloud_init_user_override' => $cloudInitOverrides['cloud_init_user_override'],
+                'cloud_init_password_override' => $cloudInitOverrides['cloud_init_password_override'],
+                'cloud_init_ssh_key_override' => $cloudInitOverrides['cloud_init_ssh_key_override'],
+                'cloud_init_hostname_override' => $cloudInitOverrides['cloud_init_hostname_override'],
+                'cloud_init_dns_override' => $cloudInitOverrides['cloud_init_dns_override'],
+                'cloud_init_search_domain_override' => $cloudInitOverrides['cloud_init_search_domain_override'],
+                'cloud_init_extra_user_data_override' => $cloudInitOverrides['cloud_init_extra_user_data_override'],
                 'vnc_display' => null,
                 'expires_at' => ($data['expires_at'] ?? '') ?: null,
                 'expire_action' => 'pause',
@@ -166,11 +179,9 @@ class VmService
 
             $vm['ip_address'] = $nicService->firstKnownAddress($nicConfigs);
             if ($cloudInitEnabled) {
-                $cloudInitIsoPath = (new CloudInitService())->createSeedIso(
+                $cloudInitIsoPath = (new CloudInitService())->createSeedIsoFromConfig(
                     $name,
-                    (string) ($template['cloud_init_user'] ?: 'ubuntu'),
-                    $template['cloud_init_password'] ?: null,
-                    $template['cloud_init_ssh_key'] ?: null,
+                    $cloudInitConfig,
                     $nicConfigs
                 );
                 $vm['cloud_init_iso_path'] = $cloudInitIsoPath;
@@ -287,6 +298,13 @@ class VmService
             throw new RuntimeException('模板未启用 cloud-init，不能把 VM 网卡改成 static/pool IP 配置。');
         }
 
+        $currentCloudInitOverrides = $this->cloudInitOverridePayload([], $vm);
+        $requestedCloudInitOverrides = $this->cloudInitOverridePayload($data, $vm);
+        $currentCloudInitConfig = $this->effectiveCloudInitConfig($template, $currentCloudInitOverrides, (string) $vm['name']);
+        $requestedCloudInitConfig = $this->effectiveCloudInitConfig($template, $requestedCloudInitOverrides, (string) $vm['name']);
+        $cloudInitConfigChanged = json_encode($currentCloudInitConfig, JSON_UNESCAPED_UNICODE) !== json_encode($requestedCloudInitConfig, JSON_UNESCAPED_UNICODE)
+            || json_encode($currentCloudInitOverrides, JSON_UNESCAPED_UNICODE) !== json_encode($requestedCloudInitOverrides, JSON_UNESCAPED_UNICODE);
+
         $resolvedNics = $this->mergePoolAssignments($requestedNics, $currentNics);
         $poolTopologyChanged = $this->poolTopologyChanged($currentNics, $requestedNics)
             || $this->poolAddressesMissing($resolvedNics);
@@ -316,12 +334,10 @@ class VmService
             $primaryIpAddress = $nicService->firstKnownAddress($resolvedNics) ?? ($vm['ip_address'] ?? null);
             $cloudInitIsoPath = $vm['cloud_init_iso_path'] ?? null;
 
-            if ($networkChanged && $cloudInitEnabled) {
-                $cloudInitIsoPath = (new CloudInitService())->createSeedIso(
+            if (($networkChanged || $cloudInitConfigChanged) && $cloudInitEnabled) {
+                $cloudInitIsoPath = (new CloudInitService())->createSeedIsoFromConfig(
                     (string) $vm['name'],
-                    (string) (($template['cloud_init_user'] ?? '') ?: 'ubuntu'),
-                    ($template['cloud_init_password'] ?? null) ?: null,
-                    ($template['cloud_init_ssh_key'] ?? null) ?: null,
+                    $requestedCloudInitConfig,
                     $resolvedNics
                 );
             }
@@ -343,6 +359,13 @@ class VmService
                 'ip_address' => $primaryIpAddress,
                 'xml_path' => (string) $vm['xml_path'],
                 'cloud_init_iso_path' => $cloudInitIsoPath,
+                'cloud_init_user_override' => $requestedCloudInitOverrides['cloud_init_user_override'],
+                'cloud_init_password_override' => $requestedCloudInitOverrides['cloud_init_password_override'],
+                'cloud_init_ssh_key_override' => $requestedCloudInitOverrides['cloud_init_ssh_key_override'],
+                'cloud_init_hostname_override' => $requestedCloudInitOverrides['cloud_init_hostname_override'],
+                'cloud_init_dns_override' => $requestedCloudInitOverrides['cloud_init_dns_override'],
+                'cloud_init_search_domain_override' => $requestedCloudInitOverrides['cloud_init_search_domain_override'],
+                'cloud_init_extra_user_data_override' => $requestedCloudInitOverrides['cloud_init_extra_user_data_override'],
                 'expires_at' => $expiresAt,
                 'expire_action' => $expireAction,
                 'expire_grace_days' => $expireGraceDays,
@@ -351,7 +374,7 @@ class VmService
                 'nics' => $resolvedNics,
             ];
 
-            if ($hardwareChanged || $networkChanged) {
+            if ($hardwareChanged || $networkChanged || $cloudInitConfigChanged) {
                 $xml = (new DomainXmlBuilder())->build($payload, $template, $image);
                 file_put_contents((string) $vm['xml_path'], $xml);
                 @chmod((string) $vm['xml_path'], 0644);
@@ -371,6 +394,13 @@ class VmService
                 'ip_address' => $primaryIpAddress,
                 'nics_json' => json_encode($resolvedNics, JSON_UNESCAPED_UNICODE),
                 'cloud_init_iso_path' => $cloudInitIsoPath,
+                'cloud_init_user_override' => $requestedCloudInitOverrides['cloud_init_user_override'],
+                'cloud_init_password_override' => $requestedCloudInitOverrides['cloud_init_password_override'],
+                'cloud_init_ssh_key_override' => $requestedCloudInitOverrides['cloud_init_ssh_key_override'],
+                'cloud_init_hostname_override' => $requestedCloudInitOverrides['cloud_init_hostname_override'],
+                'cloud_init_dns_override' => $requestedCloudInitOverrides['cloud_init_dns_override'],
+                'cloud_init_search_domain_override' => $requestedCloudInitOverrides['cloud_init_search_domain_override'],
+                'cloud_init_extra_user_data_override' => $requestedCloudInitOverrides['cloud_init_extra_user_data_override'],
                 'expires_at' => $expiresAt,
                 'expire_action' => $expireAction,
                 'expire_grace_days' => $expireGraceDays,
@@ -607,6 +637,66 @@ class VmService
                 $repo->assign((int) $row['id'], $vmId);
             }
         }
+    }
+
+    private function cloudInitOverridePayload(array $input, ?array $existingVm): array
+    {
+        $fields = [
+            'cloud_init_user_override',
+            'cloud_init_password_override',
+            'cloud_init_ssh_key_override',
+            'cloud_init_hostname_override',
+            'cloud_init_dns_override',
+            'cloud_init_search_domain_override',
+            'cloud_init_extra_user_data_override',
+        ];
+
+        $payload = [];
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $input)) {
+                $payload[$field] = $this->nullableString($input[$field]);
+                continue;
+            }
+            $payload[$field] = $existingVm ? $this->nullableString($existingVm[$field] ?? null) : null;
+        }
+
+        return $payload;
+    }
+
+    private function effectiveCloudInitConfig(array $template, array $overrides, string $vmName): array
+    {
+        $username = $this->nullableString($overrides['cloud_init_user_override'] ?? null)
+            ?? $this->nullableString($template['cloud_init_user'] ?? null)
+            ?? 'ubuntu';
+
+        return [
+            'username' => $username,
+            'password' => $this->nullableString($overrides['cloud_init_password_override'] ?? null)
+                ?? $this->nullableString($template['cloud_init_password'] ?? null),
+            'ssh_key' => $this->nullableString($overrides['cloud_init_ssh_key_override'] ?? null)
+                ?? $this->nullableString($template['cloud_init_ssh_key'] ?? null),
+            'hostname' => $this->nullableString($overrides['cloud_init_hostname_override'] ?? null)
+                ?? $this->nullableString($template['cloud_init_hostname'] ?? null)
+                ?? $vmName,
+            'dns_servers' => $this->nullableString($overrides['cloud_init_dns_override'] ?? null)
+                ?? $this->nullableString($template['cloud_init_dns_servers'] ?? null)
+                ?? '',
+            'search_domain' => $this->nullableString($overrides['cloud_init_search_domain_override'] ?? null)
+                ?? $this->nullableString($template['cloud_init_search_domain'] ?? null)
+                ?? '',
+            'extra_user_data' => $this->nullableString($overrides['cloud_init_extra_user_data_override'] ?? null)
+                ?? $this->nullableString($template['cloud_init_extra_user_data'] ?? null)
+                ?? '',
+        ];
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $text = trim((string) $value);
+        return $text === '' ? null : $text;
     }
 
     private function canEditHardware(string $status): bool

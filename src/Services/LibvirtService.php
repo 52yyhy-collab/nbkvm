@@ -32,10 +32,37 @@ class LibvirtService
     {
         return function_exists('libvirt_get_last_error') ? (string) libvirt_get_last_error() : 'unknown error';
     }
+    private function extractDomainName(string $xml): string
+    {
+        if (preg_match('/<name>([^<]+)<\/name>/', $xml, $matches) !== 1) {
+            return '';
+        }
+        return trim((string) $matches[1]);
+    }
     public function define(string $xml): void
     {
         $connection = $this->connection(false);
-        $domain = libvirt_domain_define_xml($connection, $xml);
+        $domain = @libvirt_domain_define_xml($connection, $xml);
+        if ($domain !== false) {
+            return;
+        }
+
+        $error = $this->lastError();
+        if (!str_contains(strtolower($error), 'already exists')) {
+            throw new RuntimeException('定义虚拟机失败：' . $error);
+        }
+
+        $name = $this->extractDomainName($xml);
+        if ($name === '') {
+            throw new RuntimeException('定义虚拟机失败：' . $error);
+        }
+
+        try {
+            $this->undefine($name);
+        } catch (\Throwable) {
+        }
+
+        $domain = @libvirt_domain_define_xml($connection, $xml);
         if ($domain === false) {
             throw new RuntimeException('定义虚拟机失败：' . $this->lastError());
         }
@@ -52,7 +79,7 @@ class LibvirtService
     public function start(string $name): void
     {
         [$connection, $domain] = $this->lookupWithConnection($name);
-        if (!libvirt_domain_create($domain)) {
+        if (!@libvirt_domain_create($domain)) {
             throw new RuntimeException('启动虚拟机失败：' . $this->lastError());
         }
         unset($connection);
@@ -60,7 +87,7 @@ class LibvirtService
     public function shutdown(string $name): void
     {
         [$connection, $domain] = $this->lookupWithConnection($name);
-        if (!libvirt_domain_shutdown($domain)) {
+        if (!@libvirt_domain_shutdown($domain)) {
             throw new RuntimeException('关机失败：' . $this->lastError());
         }
         unset($connection);
@@ -68,7 +95,7 @@ class LibvirtService
     public function suspend(string $name): void
     {
         [$connection, $domain] = $this->lookupWithConnection($name);
-        if (!libvirt_domain_suspend($domain)) {
+        if (!@libvirt_domain_suspend($domain)) {
             throw new RuntimeException('暂停失败：' . $this->lastError());
         }
         unset($connection);
@@ -76,7 +103,7 @@ class LibvirtService
     public function destroy(string $name): void
     {
         [$connection, $domain] = $this->lookupWithConnection($name);
-        if (!libvirt_domain_destroy($domain)) {
+        if (!@libvirt_domain_destroy($domain)) {
             throw new RuntimeException('强制停止失败：' . $this->lastError());
         }
         unset($connection);
@@ -84,7 +111,7 @@ class LibvirtService
     public function undefine(string $name): void
     {
         [$connection, $domain] = $this->lookupWithConnection($name);
-        if (!libvirt_domain_undefine($domain)) {
+        if (!@libvirt_domain_undefine($domain)) {
             throw new RuntimeException('取消定义失败：' . $this->lastError());
         }
         unset($connection);

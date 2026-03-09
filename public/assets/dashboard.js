@@ -18,6 +18,8 @@
   const modelOptions = ['virtio', 'e1000', 'rtl8139', 'vmxnet3'];
   const diskBusOptions = ['virtio', 'sata', 'scsi', 'ide'];
   const diskFormatOptions = ['qcow2', 'raw'];
+  const diskCacheOptions = ['default', 'none', 'writethrough', 'writeback', 'directsync', 'unsafe'];
+  const diskDiscardOptions = ['ignore', 'on', 'unmap'];
   const bridgeCandidates = Array.isArray(data.bridgeCandidates?.bridges) ? data.bridgeCandidates.bridges : [];
   const hostResources = Array.isArray(data.bridgeCandidates?.all) ? data.bridgeCandidates.all : [];
   const hostResourceMap = Object.fromEntries(hostResources.map((item) => [String(item.name), item]));
@@ -288,6 +290,8 @@
   const modeOptionsHtml = (options, selected) => options.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
   const diskBusOptionsHtml = (selected) => diskBusOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
   const diskFormatOptionsHtml = (selected) => diskFormatOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
+  const diskCacheOptionsHtml = (selected) => diskCacheOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
+  const diskDiscardOptionsHtml = (selected) => diskDiscardOptions.map((value) => `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${value}</option>`).join('');
   const ipv4ModeOptionsHtml = (selected) => [
     ['dhcp', 'dhcp'],
     ['static', 'static'],
@@ -556,6 +560,10 @@
       size_gb: index === 0 ? 20 : 10,
       bus: 'virtio',
       format: 'qcow2',
+      storage: '',
+      ssd_emulation: false,
+      discard: 'ignore',
+      cache: 'default',
       is_primary: index === 0,
     };
   }
@@ -575,8 +583,14 @@
         <div class="row-4 compact-fields">
           <div><label>名称</label><input type="text" data-field="name" value="${escapeHtml(item.name)}"></div>
           <div><label>容量(GB)</label><input type="number" min="1" data-field="size_gb" value="${escapeHtml(item.size_gb)}"></div>
-          <div><label>总线</label><select data-field="bus">${diskBusOptionsHtml(item.bus)}</select></div>
-          <div><label>格式</label><select data-field="format">${diskFormatOptionsHtml(item.format)}</select></div>
+          <div><label>Bus</label><select data-field="bus">${diskBusOptionsHtml(item.bus)}</select></div>
+          <div><label>Format</label><select data-field="format">${diskFormatOptionsHtml(item.format)}</select></div>
+        </div>
+        <div class="row-4 compact-fields">
+          <div><label>Storage</label><input type="text" data-field="storage" value="${escapeHtml(item.storage || '')}" placeholder="local-lvm / nfs-ssd"></div>
+          <div><label>Cache</label><select data-field="cache">${diskCacheOptionsHtml(item.cache || 'default')}</select></div>
+          <div><label>Discard</label><select data-field="discard">${diskDiscardOptionsHtml(item.discard || 'ignore')}</select></div>
+          <div><label><input class="inline" type="checkbox" data-field="ssd_emulation" ${item.ssd_emulation ? 'checked' : ''}> SSD emulate</label></div>
         </div>
         <label><input class="inline" type="checkbox" data-field="is_primary" ${item.is_primary ? 'checked' : ''}> 设为主盘</label>
       </div>`;
@@ -588,6 +602,10 @@
       size_gb: Number(card.querySelector('[data-field="size_gb"]').value || 1),
       bus: card.querySelector('[data-field="bus"]').value || 'virtio',
       format: card.querySelector('[data-field="format"]').value || 'qcow2',
+      storage: card.querySelector('[data-field="storage"]').value.trim(),
+      cache: card.querySelector('[data-field="cache"]').value || 'default',
+      discard: card.querySelector('[data-field="discard"]').value || 'ignore',
+      ssd_emulation: card.querySelector('[data-field="ssd_emulation"]').checked,
       is_primary: card.querySelector('[data-field="is_primary"]').checked,
     }));
   }
@@ -890,16 +908,37 @@
       form.reset();
       document.getElementById('template-id').value = '';
       document.getElementById('template-name').value = '';
+      document.getElementById('template-vmid-hint').value = '';
+      document.getElementById('template-os-type').value = 'l26';
+      document.getElementById('template-os-source').value = 'image';
       document.getElementById('template-os-variant').value = 'generic';
+      document.getElementById('template-virtualization-mode').value = 'kvm';
+      document.getElementById('template-machine-type').value = 'pc';
+      document.getElementById('template-firmware-type').value = 'bios';
+      document.getElementById('template-scsi-controller').value = 'virtio-scsi-single';
+      document.getElementById('template-qemu-agent-enabled').checked = true;
+      document.getElementById('template-display-type').value = 'vnc';
+      document.getElementById('template-serial-console-enabled').checked = true;
+      document.getElementById('template-gpu-type').value = 'cirrus';
       document.getElementById('template-cpu-sockets').value = '1';
       document.getElementById('template-cpu-cores').value = '2';
       document.getElementById('template-cpu-threads').value = '1';
+      document.getElementById('template-cpu-type').value = 'host';
+      document.getElementById('template-cpu-numa').checked = false;
+      document.getElementById('template-cpu-limit-percent').value = '';
+      document.getElementById('template-cpu-units').value = '';
       document.getElementById('template-memory-mb').value = '2048';
+      document.getElementById('template-memory-min-mb').value = '';
       document.getElementById('template-memory-max-mb').value = '4096';
+      document.getElementById('template-balloon-enabled').checked = true;
       document.getElementById('template-memory-overcommit').value = '100';
       document.getElementById('template-disk-size-gb').value = '20';
       document.getElementById('template-disk-bus').value = 'virtio';
       document.getElementById('template-disks-json-override').value = '';
+      document.getElementById('template-cloud-init-hostname').value = '';
+      document.getElementById('template-cloud-init-dns-servers').value = '';
+      document.getElementById('template-cloud-init-search-domain').value = '';
+      document.getElementById('template-cloud-init-extra-user-data').value = '';
       fallbackNetwork.value = String(preferredBinding().network_name || preferredNetwork().name || 'default');
       state.classList.add('hidden-block');
       state.textContent = '';
@@ -931,17 +970,30 @@
         const item = JSON.parse(button.dataset.template || '{}');
         document.getElementById('template-id').value = item.id || '';
         document.getElementById('template-name').value = item.name || '';
+        document.getElementById('template-vmid-hint').value = item.vmid_hint || '';
+        document.getElementById('template-os-type').value = item.os_type || 'l26';
+        document.getElementById('template-os-source').value = item.os_source || 'image';
         document.getElementById('template-image-id').value = item.image_id || '';
         document.getElementById('template-os-variant').value = item.os_variant || 'generic';
         document.getElementById('template-virtualization-mode').value = item.virtualization_mode || 'kvm';
         document.getElementById('template-machine-type').value = item.machine_type || 'pc';
         document.getElementById('template-firmware-type').value = item.firmware_type || 'bios';
+        document.getElementById('template-scsi-controller').value = item.scsi_controller || 'virtio-scsi-single';
+        document.getElementById('template-qemu-agent-enabled').checked = Number(item.qemu_agent_enabled ?? 1) === 1;
+        document.getElementById('template-display-type').value = item.display_type || 'vnc';
+        document.getElementById('template-serial-console-enabled').checked = Number(item.serial_console_enabled ?? 1) === 1;
         document.getElementById('template-gpu-type').value = item.gpu_type || 'cirrus';
         document.getElementById('template-cpu-sockets').value = item.cpu_sockets || 1;
         document.getElementById('template-cpu-cores').value = item.cpu_cores || 1;
         document.getElementById('template-cpu-threads').value = item.cpu_threads || 1;
+        document.getElementById('template-cpu-type').value = item.cpu_type || 'host';
+        document.getElementById('template-cpu-numa').checked = Number(item.cpu_numa || 0) === 1;
+        document.getElementById('template-cpu-limit-percent').value = item.cpu_limit_percent || '';
+        document.getElementById('template-cpu-units').value = item.cpu_units || '';
         document.getElementById('template-memory-mb').value = item.memory_mb || 2048;
+        document.getElementById('template-memory-min-mb').value = item.memory_min_mb || '';
         document.getElementById('template-memory-max-mb').value = item.memory_max_mb || '';
+        document.getElementById('template-balloon-enabled').checked = Number(item.balloon_enabled ?? 1) === 1;
         document.getElementById('template-memory-overcommit').value = item.memory_overcommit_percent || 100;
         document.getElementById('template-disk-size-gb').value = item.disk_size_gb || 20;
         document.getElementById('template-disk-bus').value = item.disk_bus || 'virtio';
@@ -950,6 +1002,10 @@
         document.getElementById('template-cloud-init-user').value = item.cloud_init_user || 'ubuntu';
         document.getElementById('template-cloud-init-password').value = item.cloud_init_password || '';
         document.getElementById('template-cloud-init-ssh-key').value = item.cloud_init_ssh_key || '';
+        document.getElementById('template-cloud-init-hostname').value = item.cloud_init_hostname || '';
+        document.getElementById('template-cloud-init-dns-servers').value = item.cloud_init_dns_servers || '';
+        document.getElementById('template-cloud-init-search-domain').value = item.cloud_init_search_domain || '';
+        document.getElementById('template-cloud-init-extra-user-data').value = item.cloud_init_extra_user_data || '';
         document.getElementById('template-autostart-default').checked = Number(item.autostart_default || 0) === 1;
         document.getElementById('template-notes').value = item.notes || '';
         document.getElementById('template-disks-json-override').value = '';
@@ -1066,6 +1122,13 @@
       document.getElementById('vm-edit-id').value = '';
       document.getElementById('vm-edit-name').value = '';
       document.getElementById('vm-edit-template').value = '';
+      document.getElementById('vm-edit-cloud-init-user-override').value = '';
+      document.getElementById('vm-edit-cloud-init-password-override').value = '';
+      document.getElementById('vm-edit-cloud-init-ssh-key-override').value = '';
+      document.getElementById('vm-edit-cloud-init-hostname-override').value = '';
+      document.getElementById('vm-edit-cloud-init-dns-override').value = '';
+      document.getElementById('vm-edit-cloud-init-search-domain-override').value = '';
+      document.getElementById('vm-edit-cloud-init-extra-user-data-override').value = '';
       editState.textContent = '';
       editState.classList.add('hidden-block');
       renderNicEditor(editNicContainer, editNicHidden, editNicPreview, [defaultNic(preferredBinding())], {readOnly: true});
@@ -1096,6 +1159,13 @@
         document.getElementById('vm-edit-memory-mb').value = item.memory_mb || 2048;
         document.getElementById('vm-edit-expires-at').value = normalizeDatetimeLocal(item.expires_at || '');
         document.getElementById('vm-edit-expire-grace-days').value = item.expire_grace_days || 3;
+        document.getElementById('vm-edit-cloud-init-user-override').value = fullItem.cloud_init_user_override || item.cloud_init_user_override || '';
+        document.getElementById('vm-edit-cloud-init-password-override').value = fullItem.cloud_init_password_override || item.cloud_init_password_override || '';
+        document.getElementById('vm-edit-cloud-init-ssh-key-override').value = fullItem.cloud_init_ssh_key_override || item.cloud_init_ssh_key_override || '';
+        document.getElementById('vm-edit-cloud-init-hostname-override').value = fullItem.cloud_init_hostname_override || item.cloud_init_hostname_override || '';
+        document.getElementById('vm-edit-cloud-init-dns-override').value = fullItem.cloud_init_dns_override || item.cloud_init_dns_override || '';
+        document.getElementById('vm-edit-cloud-init-search-domain-override').value = fullItem.cloud_init_search_domain_override || item.cloud_init_search_domain_override || '';
+        document.getElementById('vm-edit-cloud-init-extra-user-data-override').value = fullItem.cloud_init_extra_user_data_override || item.cloud_init_extra_user_data_override || '';
         renderNicEditor(editNicContainer, editNicHidden, editNicPreview, nics.map(normalizeNic), {readOnly: !editable});
         applyVmEditLock(!editable, fullItem.status || item.status || 'unknown');
         editState.textContent = `编辑 VM #${item.id}：${item.name}`;

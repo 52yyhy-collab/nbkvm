@@ -11,15 +11,30 @@ class DomainXmlBuilder
         $name = $this->e((string) $vm['name']);
         $domainType = $this->e((string) ($template['virtualization_mode'] ?? 'kvm'));
         $machineType = $this->e((string) ($template['machine_type'] ?? 'pc'));
+
         $memoryMb = max(256, (int) ($vm['memory_mb'] ?? 2048));
         $memoryKiB = $memoryMb * 1024;
         $memoryMaxMb = max($memoryMb, (int) (($template['memory_max_mb'] ?? 0) ?: $memoryMb));
         $memoryMaxKiB = $memoryMaxMb * 1024;
+
         $vcpu = max(1, (int) ($vm['cpu'] ?? 1));
         $cpuSockets = max(1, (int) ($vm['cpu_sockets'] ?? ($template['cpu_sockets'] ?? 1)));
         $cpuCores = max(1, (int) ($vm['cpu_cores'] ?? ($template['cpu_cores'] ?? 1)));
         $cpuThreads = max(1, (int) ($vm['cpu_threads'] ?? ($template['cpu_threads'] ?? 1)));
-        $graphics = $this->e((string) config('libvirt.default_graphics'));
+        $cpuType = trim((string) ($template['cpu_type'] ?? 'host')) ?: 'host';
+        $cpuNuma = (int) ($template['cpu_numa'] ?? 0) === 1;
+        $cpuLimitPercent = ($template['cpu_limit_percent'] ?? null) !== null && (string) ($template['cpu_limit_percent'] ?? '') !== ''
+            ? max(1, (int) $template['cpu_limit_percent'])
+            : null;
+        $cpuUnits = ($template['cpu_units'] ?? null) !== null && (string) ($template['cpu_units'] ?? '') !== ''
+            ? max(1, (int) $template['cpu_units'])
+            : null;
+
+        $displayType = trim((string) ($template['display_type'] ?? config('libvirt.default_graphics')));
+        if (!in_array($displayType, ['vnc', 'spice', 'none'], true)) {
+            $displayType = 'vnc';
+        }
+
         $bootSection = "<boot dev='hd'/>";
         $osExtras = '';
 
@@ -38,27 +53,69 @@ class DomainXmlBuilder
                 'bus' => (string) ($template['disk_bus'] ?? 'virtio'),
                 'format' => 'qcow2',
                 'is_primary' => true,
+                'cache' => 'default',
+                'discard' => 'ignore',
             ]];
+        }
+
+        $scsiController = trim((string) ($template['scsi_controller'] ?? 'virtio-scsi-single'));
+        $hasScsiDisk = false;
+        foreach ($disks as $disk) {
+            if (is_array($disk) && strtolower((string) ($disk['bus'] ?? '')) === 'scsi') {
+                $hasScsiDisk = true;
+                break;
+            }
+        }
+        if ($hasScsiDisk) {
+            $scsiModel = $this->scsiControllerModel($scsiController);
+            $devices[] = "    <controller type='scsi' index='0' model='" . $this->e($scsiModel) . "'/>";
         }
 
         foreach (array_values($disks) as $index => $disk) {
             if (!is_array($disk)) {
                 continue;
             }
+
             $path = $this->e((string) ($disk['path'] ?? ''));
-            $bus = $this->e((string) ($disk['bus'] ?? 'virtio'));
+            $busRaw = (string) ($disk['bus'] ?? 'virtio');
+            $bus = $this->e($busRaw);
             $format = $this->e((string) ($disk['format'] ?? 'qcow2'));
-            $target = $this->deviceName((string) ($disk['bus'] ?? 'virtio'), $index);
-            $devices[] = "    <disk type='file' device='disk'>\n      <driver name='qemu' type='{$format}'/>\n      <source file='{$path}'/>\n      <target dev='{$target}' bus='{$bus}'/>\n    </disk>";
+            $target = $this->deviceName($busRaw, $index);
+
+            $cache = strtolower(trim((string) ($disk['cache'] ?? 'default')));
+            $discard = strtolower(trim((string) ($disk['discard'] ?? 'ignore')));
+            $driverAttrs = "name='qemu' type='{$format}'";
+            if (in_array($cache, ['none', 'writethrough', 'writeback', 'directsync', 'unsafe'], true)) {
+                $driverAttrs .= " cache='" . $this->e($cache) . "'";
+            }
+            if (in_array($discard, ['on', 'unmap'], true)) {
+                $driverAttrs .= " discard='unmap'";
+            }
+
+            $devices[] = "    <disk type='file' device='disk'>\n"
+                . "      <driver {$driverAttrs}/>\n"
+                . "      <source file='{$path}'/>\n"
+                . "      <target dev='{$target}' bus='{$bus}'/>\n"
+                . "    </disk>";
         }
 
         if (($image['extension'] ?? '') === 'iso') {
             $bootSection = "<boot dev='cdrom'/><boot dev='hd'/>";
-            $devices[] = "    <disk type='file' device='cdrom'>\n      <driver name='qemu' type='raw'/>\n      <source file='" . $this->e((string) $image['path']) . "'/>\n      <target dev='sda' bus='sata'/>\n      <readonly/>\n    </disk>";
+            $devices[] = "    <disk type='file' device='cdrom'>\n"
+                . "      <driver name='qemu' type='raw'/>\n"
+                . "      <source file='" . $this->e((string) $image['path']) . "'/>\n"
+                . "      <target dev='sda' bus='sata'/>\n"
+                . "      <readonly/>\n"
+                . "    </disk>";
         }
 
         if (!empty($vm['cloud_init_iso_path'])) {
-            $devices[] = "    <disk type='file' device='cdrom'>\n      <driver name='qemu' type='raw'/>\n      <source file='" . $this->e((string) $vm['cloud_init_iso_path']) . "'/>\n      <target dev='sdb' bus='sata'/>\n      <readonly/>\n    </disk>";
+            $devices[] = "    <disk type='file' device='cdrom'>\n"
+                . "      <driver name='qemu' type='raw'/>\n"
+                . "      <source file='" . $this->e((string) $vm['cloud_init_iso_path']) . "'/>\n"
+                . "      <target dev='sdb' bus='sata'/>\n"
+                . "      <readonly/>\n"
+                . "    </disk>";
         }
 
         $nics = $vm['nics'] ?? [];
@@ -78,16 +135,112 @@ class DomainXmlBuilder
         }
 
         $gpuType = (string) ($template['gpu_type'] ?? 'cirrus');
-        if ($gpuType !== 'none') {
+        if ($displayType !== 'none' && $gpuType !== 'none') {
             $devices[] = "    <video>\n      <model type='" . $this->e($gpuType) . "' vram='16384' heads='1' primary='yes'/>\n    </video>";
         }
-        $devices[] = "    <graphics type='{$graphics}' autoport='yes' listen='0.0.0.0'/>";
-        $devices[] = "    <serial type='pty'>\n      <target port='0'/>\n    </serial>";
-        $devices[] = "    <console type='pty'>\n      <target type='serial' port='0'/>\n    </console>";
+
+        if ($displayType !== 'none') {
+            $devices[] = "    <graphics type='" . $this->e($displayType) . "' autoport='yes' listen='0.0.0.0'/>";
+        }
+
+        $serialConsoleEnabled = (int) ($template['serial_console_enabled'] ?? 1) === 1;
+        if ($serialConsoleEnabled) {
+            $devices[] = "    <serial type='pty'>\n      <target port='0'/>\n    </serial>";
+            $devices[] = "    <console type='pty'>\n      <target type='serial' port='0'/>\n    </console>";
+        }
+
+        $qemuAgentEnabled = (int) ($template['qemu_agent_enabled'] ?? 1) === 1;
+        if ($qemuAgentEnabled) {
+            $devices[] = "    <channel type='unix'>\n      <target type='virtio' name='org.qemu.guest_agent.0'/>\n    </channel>";
+        }
+
+        $balloonEnabled = (int) ($template['balloon_enabled'] ?? 1) === 1;
+        $devices[] = "    <memballoon model='" . ($balloonEnabled ? 'virtio' : 'none') . "'/>";
 
         $maxMemoryNode = $memoryMaxKiB > $memoryKiB ? "\n  <maxMemory slots='16' unit='KiB'>{$memoryMaxKiB}</maxMemory>" : '';
+        $cpuSection = $this->buildCpuSection($cpuType, $cpuSockets, $cpuCores, $cpuThreads, $cpuNuma, $vcpu, $memoryKiB);
+        $cpuTuneSection = $this->buildCpuTuneSection($cpuLimitPercent, $cpuUnits, $vcpu);
 
-        return "<domain type='{$domainType}'>\n  <name>{$name}</name>{$maxMemoryNode}\n  <memory unit='KiB'>{$memoryKiB}</memory>\n  <currentMemory unit='KiB'>{$memoryKiB}</currentMemory>\n  <vcpu placement='static'>{$vcpu}</vcpu>\n  <cpu mode='host-model'>\n    <topology sockets='{$cpuSockets}' cores='{$cpuCores}' threads='{$cpuThreads}'/>\n  </cpu>\n  <os>\n    <type arch='x86_64' machine='{$machineType}'>hvm</type>\n    {$bootSection}{$osExtras}\n  </os>\n  <features>\n    <acpi/>\n    <apic/>\n  </features>\n  <clock offset='utc'/>\n  <devices>\n    <emulator>/usr/bin/qemu-system-x86_64</emulator>\n" . implode("\n", $devices) . "\n  </devices>\n</domain>";
+        return "<domain type='{$domainType}'>\n"
+            . "  <name>{$name}</name>{$maxMemoryNode}\n"
+            . "  <memory unit='KiB'>{$memoryKiB}</memory>\n"
+            . "  <currentMemory unit='KiB'>{$memoryKiB}</currentMemory>\n"
+            . "  <vcpu placement='static'>{$vcpu}</vcpu>\n"
+            . $cpuSection
+            . $cpuTuneSection
+            . "  <os>\n"
+            . "    <type arch='x86_64' machine='{$machineType}'>hvm</type>\n"
+            . "    {$bootSection}{$osExtras}\n"
+            . "  </os>\n"
+            . "  <features>\n"
+            . "    <acpi/>\n"
+            . "    <apic/>\n"
+            . "  </features>\n"
+            . "  <clock offset='utc'/>\n"
+            . "  <devices>\n"
+            . "    <emulator>/usr/bin/qemu-system-x86_64</emulator>\n"
+            . implode("\n", $devices)
+            . "\n  </devices>\n"
+            . "</domain>";
+    }
+
+    private function buildCpuSection(string $cpuType, int $sockets, int $cores, int $threads, bool $numa, int $vcpu, int $memoryKiB): string
+    {
+        $type = strtolower(trim($cpuType));
+        if ($type === '' || $type === 'host' || $type === 'host-passthrough') {
+            $mode = 'host-passthrough';
+            $extra = "";
+        } elseif ($type === 'default' || $type === 'host-model') {
+            $mode = 'host-model';
+            $extra = "";
+        } else {
+            $mode = 'custom';
+            $extra = "\n    <model fallback='allow'>" . $this->e($cpuType) . "</model>";
+        }
+
+        $numaXml = '';
+        if ($numa) {
+            $numaXml = "\n    <numa>\n      <cell id='0' cpus='0-" . max(0, $vcpu - 1) . "' memory='{$memoryKiB}' unit='KiB'/>\n    </numa>";
+        }
+
+        $matchAttr = $mode === 'custom' ? " match='exact'" : '';
+        $checkAttr = $mode === 'host-passthrough' ? " check='none'" : '';
+
+        return "  <cpu mode='{$mode}'{$matchAttr}{$checkAttr}>\n"
+            . "    <topology sockets='{$sockets}' cores='{$cores}' threads='{$threads}'/>"
+            . $extra
+            . $numaXml
+            . "\n  </cpu>\n";
+    }
+
+    private function buildCpuTuneSection(?int $cpuLimitPercent, ?int $cpuUnits, int $vcpu): string
+    {
+        if ($cpuLimitPercent === null && $cpuUnits === null) {
+            return '';
+        }
+
+        $lines = ['  <cputune>'];
+        if ($cpuLimitPercent !== null) {
+            $period = 100000;
+            $quota = (int) floor($period * ($cpuLimitPercent / 100) * max(1, $vcpu));
+            $lines[] = "    <period>{$period}</period>";
+            $lines[] = "    <quota>{$quota}</quota>";
+        }
+        if ($cpuUnits !== null) {
+            $lines[] = '    <shares>' . max(2, min(262144, $cpuUnits)) . '</shares>';
+        }
+        $lines[] = '  </cputune>';
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    private function scsiControllerModel(string $controller): string
+    {
+        return match (strtolower(trim($controller))) {
+            'lsi' => 'lsilogic',
+            'megasas' => 'megasas',
+            default => 'virtio-scsi',
+        };
     }
 
     private function buildInterfaceDevice(array $nic, string $fallbackNetwork): string

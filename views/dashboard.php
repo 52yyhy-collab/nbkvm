@@ -35,7 +35,25 @@ $nicSummary = static function (array $nic): string {
 };
 $diskSummary = static function (array $disk): string {
     $primary = !empty($disk['is_primary']) ? '主盘' : '数据盘';
-    return $primary . ' / ' . ($disk['bus'] ?? 'virtio') . ' / ' . ($disk['format'] ?? 'qcow2') . ' / ' . ($disk['size_gb'] ?? '?') . ' GB';
+    $parts = [
+        $primary,
+        (string) ($disk['bus'] ?? 'virtio'),
+        (string) ($disk['format'] ?? 'qcow2'),
+        (string) ($disk['size_gb'] ?? '?') . ' GB',
+    ];
+    if (!empty($disk['storage'])) {
+        $parts[] = 'storage=' . (string) $disk['storage'];
+    }
+    if (!empty($disk['cache']) && (string) $disk['cache'] !== 'default') {
+        $parts[] = 'cache=' . (string) $disk['cache'];
+    }
+    if (!empty($disk['discard']) && (string) $disk['discard'] !== 'ignore') {
+        $parts[] = 'discard=' . (string) $disk['discard'];
+    }
+    if (!empty($disk['ssd_emulation'])) {
+        $parts[] = 'ssd=1';
+    }
+    return implode(' / ', $parts);
 };
 $dashboardJson = [
     'currentPage' => $currentPage,
@@ -66,17 +84,30 @@ $dashboardJson = [
     'templates' => array_map(static fn (array $template): array => [
         'id' => (int) ($template['id'] ?? 0),
         'name' => (string) ($template['name'] ?? ''),
+        'vmid_hint' => ($template['vmid_hint'] ?? null) !== null && (string) ($template['vmid_hint'] ?? '') !== '' ? (int) $template['vmid_hint'] : null,
         'image_id' => (int) ($template['image_id'] ?? 0),
+        'os_type' => (string) ($template['os_type'] ?? 'l26'),
+        'os_source' => (string) ($template['os_source'] ?? 'image'),
         'os_variant' => (string) ($template['os_variant'] ?? ''),
         'virtualization_mode' => (string) ($template['virtualization_mode'] ?? 'kvm'),
         'machine_type' => (string) ($template['machine_type'] ?? 'pc'),
         'firmware_type' => (string) ($template['firmware_type'] ?? 'bios'),
+        'scsi_controller' => (string) ($template['scsi_controller'] ?? 'virtio-scsi-single'),
+        'qemu_agent_enabled' => (int) ($template['qemu_agent_enabled'] ?? 1),
+        'display_type' => (string) ($template['display_type'] ?? 'vnc'),
+        'serial_console_enabled' => (int) ($template['serial_console_enabled'] ?? 1),
         'gpu_type' => (string) ($template['gpu_type'] ?? 'cirrus'),
         'cpu_sockets' => (int) ($template['cpu_sockets'] ?? 1),
         'cpu_cores' => (int) ($template['cpu_cores'] ?? 1),
         'cpu_threads' => (int) ($template['cpu_threads'] ?? 1),
+        'cpu_type' => (string) ($template['cpu_type'] ?? 'host'),
+        'cpu_numa' => (int) ($template['cpu_numa'] ?? 0),
+        'cpu_limit_percent' => ($template['cpu_limit_percent'] ?? null) !== null && (string) ($template['cpu_limit_percent'] ?? '') !== '' ? (int) $template['cpu_limit_percent'] : null,
+        'cpu_units' => ($template['cpu_units'] ?? null) !== null && (string) ($template['cpu_units'] ?? '') !== '' ? (int) $template['cpu_units'] : null,
         'memory_mb' => (int) ($template['memory_mb'] ?? 2048),
+        'memory_min_mb' => ($template['memory_min_mb'] ?? null) !== null && (string) ($template['memory_min_mb'] ?? '') !== '' ? (int) $template['memory_min_mb'] : null,
         'memory_max_mb' => (int) ($template['memory_max_mb'] ?? 0),
+        'balloon_enabled' => (int) ($template['balloon_enabled'] ?? 1),
         'memory_overcommit_percent' => (int) ($template['memory_overcommit_percent'] ?? 100),
         'disk_size_gb' => (int) ($template['disk_size_gb'] ?? 20),
         'disk_bus' => (string) ($template['disk_bus'] ?? 'virtio'),
@@ -86,6 +117,10 @@ $dashboardJson = [
         'cloud_init_user' => (string) ($template['cloud_init_user'] ?? 'ubuntu'),
         'cloud_init_password' => (string) ($template['cloud_init_password'] ?? ''),
         'cloud_init_ssh_key' => (string) ($template['cloud_init_ssh_key'] ?? ''),
+        'cloud_init_hostname' => (string) ($template['cloud_init_hostname'] ?? ''),
+        'cloud_init_dns_servers' => (string) ($template['cloud_init_dns_servers'] ?? ''),
+        'cloud_init_search_domain' => (string) ($template['cloud_init_search_domain'] ?? ''),
+        'cloud_init_extra_user_data' => (string) ($template['cloud_init_extra_user_data'] ?? ''),
         'network_name' => (string) ($template['network_name'] ?? 'default'),
         'notes' => (string) ($template['notes'] ?? ''),
         'linked_vm_count' => (int) ($template['linked_vm_count'] ?? 0),
@@ -107,6 +142,13 @@ $dashboardJson = [
         'expire_grace_days' => (int) ($vm['expire_grace_days'] ?? 3),
         'ip_address' => (string) ($vm['ip_address'] ?? ''),
         'vnc_display' => (string) ($vm['vnc_display'] ?? ''),
+        'cloud_init_user_override' => (string) ($vm['cloud_init_user_override'] ?? ''),
+        'cloud_init_password_override' => (string) ($vm['cloud_init_password_override'] ?? ''),
+        'cloud_init_ssh_key_override' => (string) ($vm['cloud_init_ssh_key_override'] ?? ''),
+        'cloud_init_hostname_override' => (string) ($vm['cloud_init_hostname_override'] ?? ''),
+        'cloud_init_dns_override' => (string) ($vm['cloud_init_dns_override'] ?? ''),
+        'cloud_init_search_domain_override' => (string) ($vm['cloud_init_search_domain_override'] ?? ''),
+        'cloud_init_extra_user_data_override' => (string) ($vm['cloud_init_extra_user_data_override'] ?? ''),
         'disks' => array_values($vm['normalized_disks'] ?? []),
         'nics' => array_values($vm['normalized_nics'] ?? []),
     ], $vms),

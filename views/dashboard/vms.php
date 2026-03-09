@@ -29,6 +29,29 @@
           <textarea id="vm-nics-preview" readonly></textarea>
         </details>
       </div>
+      <details class="top-gap">
+        <summary>Cloud-Init 覆盖（可选，高级）</summary>
+        <p class="muted">用于创建时覆盖模板默认 cloud-init：可改密码、注入 SSH Key、设主机名、DNS、附加高级 user-data 片段。</p>
+        <div class="row-2">
+          <div>
+            <label>用户名覆盖</label>
+            <input type="text" name="cloud_init_user_override" id="vm-cloud-init-user-override" placeholder="留空=继承模板">
+          </div>
+          <div>
+            <label>密码覆盖（重设）</label>
+            <input type="text" name="cloud_init_password_override" id="vm-cloud-init-password-override" placeholder="留空=继承模板">
+          </div>
+        </div>
+        <label>SSH Key 覆盖</label>
+        <textarea name="cloud_init_ssh_key_override" id="vm-cloud-init-ssh-key-override" placeholder="一行一个 key"></textarea>
+        <div class="row-3">
+          <div><label>Hostname 覆盖</label><input type="text" name="cloud_init_hostname_override" id="vm-cloud-init-hostname-override" placeholder="留空=继承模板"></div>
+          <div><label>DNS 覆盖</label><input type="text" name="cloud_init_dns_override" id="vm-cloud-init-dns-override" placeholder="1.1.1.1,8.8.8.8"></div>
+          <div><label>Search Domain 覆盖</label><input type="text" name="cloud_init_search_domain_override" id="vm-cloud-init-search-domain-override" placeholder="example.local"></div>
+        </div>
+        <label>高级 user-data 片段</label>
+        <textarea name="cloud_init_extra_user_data_override" id="vm-cloud-init-extra-user-data-override" placeholder="可填 packages/runcmd/write_files 片段（无需 #cloud-config）"></textarea>
+      </details>
       <label><input class="inline" type="checkbox" name="autostart" value="1"> 创建后立即启动</label>
       <label>到期时间</label>
       <input type="datetime-local" name="expires_at">
@@ -76,6 +99,30 @@
       <details>
         <summary>查看生成后的 vm_nics_json</summary>
         <textarea id="vm-edit-nics-preview" readonly></textarea>
+      </details>
+
+      <details class="top-gap" open>
+        <summary>Cloud-Init 覆盖（密码重设 / 高级操作）</summary>
+        <p class="muted">保存后会重生成 cloud-init seed ISO 并重新 define 域配置；参数通常在下次重启实例时生效。</p>
+        <div class="row-2">
+          <div>
+            <label>用户名覆盖</label>
+            <input type="text" name="cloud_init_user_override" id="vm-edit-cloud-init-user-override" placeholder="留空=继承模板">
+          </div>
+          <div>
+            <label>密码覆盖（重设）</label>
+            <input type="text" name="cloud_init_password_override" id="vm-edit-cloud-init-password-override" placeholder="留空=继承模板">
+          </div>
+        </div>
+        <label>SSH Key 覆盖</label>
+        <textarea name="cloud_init_ssh_key_override" id="vm-edit-cloud-init-ssh-key-override" placeholder="一行一个 key"></textarea>
+        <div class="row-3">
+          <div><label>Hostname 覆盖</label><input type="text" name="cloud_init_hostname_override" id="vm-edit-cloud-init-hostname-override" placeholder="留空=继承模板"></div>
+          <div><label>DNS 覆盖</label><input type="text" name="cloud_init_dns_override" id="vm-edit-cloud-init-dns-override" placeholder="1.1.1.1,8.8.8.8"></div>
+          <div><label>Search Domain 覆盖</label><input type="text" name="cloud_init_search_domain_override" id="vm-edit-cloud-init-search-domain-override" placeholder="example.local"></div>
+        </div>
+        <label>高级 user-data 片段</label>
+        <textarea name="cloud_init_extra_user_data_override" id="vm-edit-cloud-init-extra-user-data-override" placeholder="可填 packages/runcmd/write_files 片段（无需 #cloud-config）"></textarea>
       </details>
 
       <div class="spacer"></div>
@@ -158,6 +205,13 @@
                   'memory_mb' => (int) ($vm['memory_mb'] ?? 2048),
                   'expires_at' => (string) ($vm['expires_at'] ?? ''),
                   'expire_grace_days' => (int) ($vm['expire_grace_days'] ?? 3),
+                  'cloud_init_user_override' => (string) ($vm['cloud_init_user_override'] ?? ''),
+                  'cloud_init_password_override' => (string) ($vm['cloud_init_password_override'] ?? ''),
+                  'cloud_init_ssh_key_override' => (string) ($vm['cloud_init_ssh_key_override'] ?? ''),
+                  'cloud_init_hostname_override' => (string) ($vm['cloud_init_hostname_override'] ?? ''),
+                  'cloud_init_dns_override' => (string) ($vm['cloud_init_dns_override'] ?? ''),
+                  'cloud_init_search_domain_override' => (string) ($vm['cloud_init_search_domain_override'] ?? ''),
+                  'cloud_init_extra_user_data_override' => (string) ($vm['cloud_init_extra_user_data_override'] ?? ''),
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?>'>编辑配置</button>
                 <?php if (auth_can_write()): ?>
                 <form action="/vms/start" method="post"><?= csrf_field() ?><input type="hidden" name="redirect_to" value="<?= e($redirectTo) ?>"><input type="hidden" name="id" value="<?= (int) $vm['id'] ?>"><button class="btn success" type="submit">启动</button></form>

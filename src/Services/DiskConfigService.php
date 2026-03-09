@@ -40,6 +40,10 @@ class DiskConfigService
                 'size_gb' => $defaultSizeGb,
                 'bus' => $defaultBus,
                 'format' => 'qcow2',
+                'storage' => null,
+                'ssd_emulation' => false,
+                'discard' => 'ignore',
+                'cache' => 'default',
                 'is_primary' => true,
             ]];
         }
@@ -109,12 +113,27 @@ class DiskConfigService
                 $primaryIndex = count($normalized);
             }
 
+            $storage = trim((string) ($disk['storage'] ?? '')) ?: null;
+            $ssdEmulation = $this->boolFlag($disk['ssd_emulation'] ?? false);
+            $discard = strtolower(trim((string) ($disk['discard'] ?? 'ignore')));
+            if (!in_array($discard, ['ignore', 'on', 'unmap'], true)) {
+                $discard = 'ignore';
+            }
+            $cache = strtolower(trim((string) ($disk['cache'] ?? 'default')));
+            if (!in_array($cache, ['default', 'none', 'writethrough', 'writeback', 'directsync', 'unsafe'], true)) {
+                $cache = 'default';
+            }
+
             $normalized[] = [
                 'name' => $name,
                 'path' => trim((string) ($disk['path'] ?? '')) ?: null,
                 'size_gb' => $sizeGb,
                 'bus' => $bus,
                 'format' => $format,
+                'storage' => $storage,
+                'ssd_emulation' => $ssdEmulation,
+                'discard' => $discard,
+                'cache' => $cache,
                 'is_primary' => $isPrimary,
             ];
         }
@@ -126,6 +145,10 @@ class DiskConfigService
                 'size_gb' => $defaultSizeGb,
                 'bus' => $defaultBus,
                 'format' => 'qcow2',
+                'storage' => null,
+                'ssd_emulation' => false,
+                'discard' => 'ignore',
+                'cache' => 'default',
                 'is_primary' => true,
             ];
             return $normalized;

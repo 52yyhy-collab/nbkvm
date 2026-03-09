@@ -93,30 +93,94 @@ class TemplateService
             $osVariant = (string) config('libvirt.default_os_variant');
         }
 
+        $vmidHintRaw = trim((string) ($data['vmid_hint'] ?? ($existing['vmid_hint'] ?? '')));
+        $vmidHint = $vmidHintRaw !== '' ? max(1, (int) $vmidHintRaw) : null;
+
+        $osType = trim((string) ($data['os_type'] ?? ($existing['os_type'] ?? 'l26')));
+        if (!in_array($osType, ['l26', 'win', 'other'], true)) {
+            $osType = 'l26';
+        }
+
+        $defaultOsSource = strtolower((string) ($image['extension'] ?? '')) === 'iso' ? 'iso' : 'image';
+        $osSource = trim((string) ($data['os_source'] ?? ($existing['os_source'] ?? $defaultOsSource)));
+        if (!in_array($osSource, ['image', 'iso', 'clone'], true)) {
+            $osSource = $defaultOsSource;
+        }
+
+        $cpuType = trim((string) ($data['cpu_type'] ?? ($existing['cpu_type'] ?? 'host')));
+        if ($cpuType === '') {
+            $cpuType = 'host';
+        }
+        $cpuNuma = $this->boolFlag($data['cpu_numa'] ?? ($existing['cpu_numa'] ?? 0)) ? 1 : 0;
+        $cpuLimitPercent = ($data['cpu_limit_percent'] ?? '') !== ''
+            ? max(1, (int) $data['cpu_limit_percent'])
+            : (($existing['cpu_limit_percent'] ?? null) !== null ? max(1, (int) $existing['cpu_limit_percent']) : null);
+        $cpuUnits = ($data['cpu_units'] ?? '') !== ''
+            ? max(1, (int) $data['cpu_units'])
+            : (($existing['cpu_units'] ?? null) !== null ? max(1, (int) $existing['cpu_units']) : null);
+
+        $memoryMinMb = ($data['memory_min_mb'] ?? '') !== ''
+            ? min($memoryMb, max(128, (int) $data['memory_min_mb']))
+            : (($existing['memory_min_mb'] ?? null) !== null ? min($memoryMb, max(128, (int) $existing['memory_min_mb'])) : null);
+        $balloonEnabled = $this->boolFlag($data['balloon_enabled'] ?? ($existing['balloon_enabled'] ?? 1)) ? 1 : 0;
+
+        $scsiController = trim((string) ($data['scsi_controller'] ?? ($existing['scsi_controller'] ?? 'virtio-scsi-single')));
+        if ($scsiController === '') {
+            $scsiController = 'virtio-scsi-single';
+        }
+        $qemuAgentEnabled = $this->boolFlag($data['qemu_agent_enabled'] ?? ($existing['qemu_agent_enabled'] ?? 1)) ? 1 : 0;
+        $displayType = trim((string) ($data['display_type'] ?? ($existing['display_type'] ?? 'vnc')));
+        if (!in_array($displayType, ['vnc', 'spice', 'none'], true)) {
+            $displayType = 'vnc';
+        }
+        $serialConsoleEnabled = $this->boolFlag($data['serial_console_enabled'] ?? ($existing['serial_console_enabled'] ?? 1)) ? 1 : 0;
+
+        $cloudInitUser = trim((string) ($data['cloud_init_user'] ?? ($existing['cloud_init_user'] ?? 'ubuntu')));
+        if ($cloudInitUser === '') {
+            $cloudInitUser = 'ubuntu';
+        }
+
         return [
             'name' => $name,
+            'vmid_hint' => $vmidHint,
             'image_id' => $imageId,
             'image_type' => $image['extension'],
+            'os_type' => $osType,
+            'os_source' => $osSource,
             'os_variant' => $osVariant,
             'cpu' => $cpu,
+            'cpu_type' => $cpuType,
+            'cpu_numa' => $cpuNuma,
+            'cpu_limit_percent' => $cpuLimitPercent,
+            'cpu_units' => $cpuUnits,
             'memory_mb' => $memoryMb,
+            'memory_min_mb' => $memoryMinMb,
+            'memory_max_mb' => $memoryMaxMb,
+            'balloon_enabled' => $balloonEnabled,
             'disk_size_gb' => (int) ($disks[0]['size_gb'] ?? $diskSizeGb),
             'disk_bus' => (string) ($disks[0]['bus'] ?? $diskBus),
+            'scsi_controller' => $scsiController,
             'network_name' => $primaryNetworkName,
             'notes' => trim((string) ($data['notes'] ?? ($existing['notes'] ?? ''))),
             'cloud_init_enabled' => $cloudInitEnabled,
-            'cloud_init_user' => trim((string) ($data['cloud_init_user'] ?? ($existing['cloud_init_user'] ?? 'ubuntu'))),
+            'cloud_init_user' => $cloudInitUser,
             'cloud_init_password' => trim((string) ($data['cloud_init_password'] ?? ($existing['cloud_init_password'] ?? ''))) ?: null,
             'cloud_init_ssh_key' => trim((string) ($data['cloud_init_ssh_key'] ?? ($existing['cloud_init_ssh_key'] ?? ''))) ?: null,
+            'cloud_init_hostname' => trim((string) ($data['cloud_init_hostname'] ?? ($existing['cloud_init_hostname'] ?? ''))) ?: null,
+            'cloud_init_dns_servers' => trim((string) ($data['cloud_init_dns_servers'] ?? ($existing['cloud_init_dns_servers'] ?? ''))) ?: null,
+            'cloud_init_search_domain' => trim((string) ($data['cloud_init_search_domain'] ?? ($existing['cloud_init_search_domain'] ?? ''))) ?: null,
+            'cloud_init_extra_user_data' => trim((string) ($data['cloud_init_extra_user_data'] ?? ($existing['cloud_init_extra_user_data'] ?? ''))) ?: null,
             'virtualization_mode' => trim((string) ($data['virtualization_mode'] ?? ($existing['virtualization_mode'] ?? config('virtualization.default_mode')))),
             'cpu_sockets' => $cpuSockets,
             'cpu_cores' => $cpuCores,
             'cpu_threads' => $cpuThreads,
             'machine_type' => trim((string) ($data['machine_type'] ?? ($existing['machine_type'] ?? config('virtualization.default_machine')))),
             'firmware_type' => trim((string) ($data['firmware_type'] ?? ($existing['firmware_type'] ?? config('virtualization.default_firmware')))),
+            'qemu_agent_enabled' => $qemuAgentEnabled,
+            'display_type' => $displayType,
+            'serial_console_enabled' => $serialConsoleEnabled,
             'gpu_type' => trim((string) ($data['gpu_type'] ?? ($existing['gpu_type'] ?? config('virtualization.default_gpu')))),
             'autostart_default' => ($data['autostart_default'] ?? '') === '1' ? 1 : 0,
-            'memory_max_mb' => $memoryMaxMb,
             'memory_overcommit_percent' => max(100, (int) ($data['memory_overcommit_percent'] ?? ($existing['memory_overcommit_percent'] ?? 100))),
             'disk_overcommit_enabled' => ($data['disk_overcommit_enabled'] ?? '') === '1' ? 1 : 0,
             'disks_json' => json_encode($disks, JSON_UNESCAPED_UNICODE),
@@ -142,5 +206,10 @@ class TemplateService
                 throw new RuntimeException('该模板已经派生出虚拟机，不能再修改“' . $label . '”。如需变更，请复制出新模板。');
             }
         }
+    }
+
+    private function boolFlag(mixed $value): bool
+    {
+        return in_array((string) $value, ['1', 'true', 'on', 'yes'], true) || $value === true || $value === 1;
     }
 }
